@@ -1,0 +1,279 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Mobility Specialist Data Feed",
+    "description": "Road network conditions and vehicle routing between two known coordinates. Every operation requires explicit latitude and longitude values; it cannot look up coordinates from a place name.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://holonet-apim-databank-8108.azure-api.net/geo",
+      "description": "APIM gateway base URL. APIM validates the Entra token, then forwards to the function app backend."
+    }
+  ],
+  "paths": {
+    "/traffic/incidents": {
+      "get": {
+        "operationId": "getTrafficIncidents",
+        "summary": "Get active traffic incidents near a coordinate",
+        "description": "Returns active traffic incidents such as crashes, road closures, construction, and congestion within a radius of the given coordinate, sorted from nearest to farthest. Use this to answer whether roads near a location are blocked, congested, or passable right now.",
+        "parameters": [
+          {
+            "name": "latitude",
+            "in": "query",
+            "required": true,
+            "description": "Latitude of the center of the search area in decimal degrees, between -90 and 90.",
+            "schema": { "type": "number", "format": "double", "minimum": -90, "maximum": 90 }
+          },
+          {
+            "name": "longitude",
+            "in": "query",
+            "required": true,
+            "description": "Longitude of the center of the search area in decimal degrees, between -180 and 180.",
+            "schema": { "type": "number", "format": "double", "minimum": -180, "maximum": 180 }
+          },
+          {
+            "name": "radiusMeters",
+            "in": "query",
+            "required": false,
+            "description": "Radius of the search area in meters, between 50 and 25000. Use roughly 2000 for a neighborhood and 25000 for a metropolitan area. Defaults to 2000.",
+            "schema": { "type": "integer", "minimum": 50, "maximum": 25000, "default": 2000 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The incident search completed. An empty incidents array means no active incidents were reported in the area.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TrafficIncidentResult" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/InvalidRequest" },
+          "502": { "$ref": "#/components/responses/UpstreamFailure" },
+          "503": { "$ref": "#/components/responses/NotConfigured" }
+        }
+      }
+    },
+    "/route": {
+      "get": {
+        "operationId": "getRouteDetails",
+        "summary": "Calculate a driving, trucking, or walking route between two coordinates",
+        "description": "Calculates a route from an origin coordinate to a destination coordinate and returns the path as GeoJSON together with total distance, estimated travel time, and turn by turn guidance. Use this to answer how far apart two known points are by road, how long the trip takes, and which way the route goes. For trucks, supply the vehicle dimension and weight parameters so that legal restrictions such as low bridges and weight limits are respected.",
+        "parameters": [
+          {
+            "name": "originLatitude",
+            "in": "query",
+            "required": true,
+            "description": "Latitude of the starting point in decimal degrees, between -90 and 90.",
+            "schema": { "type": "number", "format": "double", "minimum": -90, "maximum": 90 }
+          },
+          {
+            "name": "originLongitude",
+            "in": "query",
+            "required": true,
+            "description": "Longitude of the starting point in decimal degrees, between -180 and 180.",
+            "schema": { "type": "number", "format": "double", "minimum": -180, "maximum": 180 }
+          },
+          {
+            "name": "destinationLatitude",
+            "in": "query",
+            "required": true,
+            "description": "Latitude of the ending point in decimal degrees, between -90 and 90.",
+            "schema": { "type": "number", "format": "double", "minimum": -90, "maximum": 90 }
+          },
+          {
+            "name": "destinationLongitude",
+            "in": "query",
+            "required": true,
+            "description": "Longitude of the ending point in decimal degrees, between -180 and 180.",
+            "schema": { "type": "number", "format": "double", "minimum": -180, "maximum": 180 }
+          },
+          {
+            "name": "output",
+            "in": "query",
+            "required": true,
+            "description": "Response format. Always send details, which returns machine readable route data. The other formats return a picture that cannot be interpreted here.",
+            "schema": { "type": "string", "enum": ["details"], "default": "details" }
+          },
+          {
+            "name": "travelMode",
+            "in": "query",
+            "required": false,
+            "description": "How the trip is made. Use car for ordinary vehicles, truck for commercial vehicles subject to size and weight restrictions, or pedestrian for walking. Defaults to car.",
+            "schema": { "type": "string", "enum": ["car", "truck", "pedestrian"], "default": "car" }
+          },
+          {
+            "name": "isVehicleCommercial",
+            "in": "query",
+            "required": false,
+            "description": "Whether the vehicle is used for commercial purposes, which changes which roads are legal. Only valid when travelMode is truck.",
+            "schema": { "type": "boolean" }
+          },
+          {
+            "name": "weight",
+            "in": "query",
+            "required": false,
+            "description": "Total vehicle weight in kilograms, used to respect posted weight limits. Only valid when travelMode is truck.",
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "axleCount",
+            "in": "query",
+            "required": false,
+            "description": "Number of axles on the vehicle. Only valid when travelMode is truck.",
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "axleWeight",
+            "in": "query",
+            "required": false,
+            "description": "Weight per axle in kilograms, used to respect posted axle limits. Only valid when travelMode is truck.",
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "height",
+            "in": "query",
+            "required": false,
+            "description": "Vehicle height in meters, used to avoid low bridges and tunnels. Only valid when travelMode is truck.",
+            "schema": { "type": "number", "format": "double" }
+          },
+          {
+            "name": "width",
+            "in": "query",
+            "required": false,
+            "description": "Vehicle width in meters, used to avoid narrow roads. Only valid when travelMode is truck.",
+            "schema": { "type": "number", "format": "double" }
+          },
+          {
+            "name": "length",
+            "in": "query",
+            "required": false,
+            "description": "Vehicle length in meters, used to avoid roads with turning restrictions. Only valid when travelMode is truck.",
+            "schema": { "type": "number", "format": "double" }
+          },
+          {
+            "name": "maxSpeed",
+            "in": "query",
+            "required": false,
+            "description": "Maximum speed the vehicle can travel in kilometers per hour, used to refine travel time. Only valid when travelMode is truck.",
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "loadType",
+            "in": "query",
+            "required": false,
+            "description": "Hazardous material classifications the vehicle is carrying, which restrict it from certain roads and tunnels. Repeat this parameter once per classification. Only valid when travelMode is truck.",
+            "schema": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The route was calculated successfully and is returned as a GeoJSON feature collection.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RouteDetailsResult" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/InvalidRequest" },
+          "502": { "$ref": "#/components/responses/UpstreamFailure" },
+          "503": { "$ref": "#/components/responses/NotConfigured" }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "InvalidRequest": {
+        "description": "The request parameters were missing or invalid. The detail field explains what to correct.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+        }
+      },
+      "UpstreamFailure": {
+        "description": "The upstream mapping provider could not complete the request.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+        }
+      },
+      "NotConfigured": {
+        "description": "The mapping service is not configured on the server and cannot answer requests.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+        }
+      }
+    },
+    "schemas": {
+      "ProblemDetails": {
+        "type": "object",
+        "description": "A machine readable description of a failed request.",
+        "properties": {
+          "status": { "type": "integer", "description": "The HTTP status code." },
+          "title": { "type": "string", "description": "A short summary of the problem type." },
+          "detail": { "type": "string", "description": "An explanation of what went wrong and how to correct it." }
+        }
+      },
+      "TrafficIncidentResult": {
+        "type": "object",
+        "description": "Active traffic incidents within a radius of a point.",
+        "properties": {
+          "latitude": { "type": "number", "description": "The latitude of the center of the search area." },
+          "longitude": { "type": "number", "description": "The longitude of the center of the search area." },
+          "radiusMeters": { "type": "integer", "description": "The search radius in meters that was used." },
+          "incidentCount": { "type": "integer", "description": "The total number of active incidents found." },
+          "roadClosureCount": { "type": "integer", "description": "How many of the incidents fully close a road. Treat this as the highest priority signal for whether an area is reachable." },
+          "nearestIncidentMeters": { "type": ["number", "null"], "description": "Distance in meters from the center point to the closest incident, or null when no incidents were found." },
+          "incidents": {
+            "type": "array",
+            "description": "The individual incidents, ordered from nearest to farthest. Summarize these rather than listing every one.",
+            "items": { "$ref": "#/components/schemas/TrafficIncident" }
+          }
+        }
+      },
+      "TrafficIncident": {
+        "type": "object",
+        "description": "A single active traffic incident.",
+        "properties": {
+          "id": { "type": "integer", "description": "The provider identifier for the incident." },
+          "incidentType": { "type": "string", "description": "The kind of incident, for example Accident, Construction, or Congestion." },
+          "title": { "type": "string", "description": "A short label for the incident, usually naming the affected road." },
+          "description": { "type": "string", "description": "A fuller narrative of what is happening and where." },
+          "severity": { "type": ["integer", "null"], "description": "Relative impact of the incident, where larger numbers mean greater disruption." },
+          "isRoadClosed": { "type": "boolean", "description": "True when the road is completely closed to traffic." },
+          "isTrafficJam": { "type": "boolean", "description": "True when the incident is causing a traffic jam." },
+          "delaySeconds": { "type": ["number", "null"], "description": "Estimated additional travel time in seconds caused by this incident." },
+          "startTime": { "type": ["string", "null"], "description": "When the incident began, in ISO 8601 format." },
+          "endTime": { "type": ["string", "null"], "description": "When the incident is expected to clear, in ISO 8601 format." },
+          "latitude": { "type": "number", "description": "The latitude of the incident." },
+          "longitude": { "type": "number", "description": "The longitude of the incident." },
+          "distanceMeters": { "type": "number", "description": "Distance in meters from the queried center point to this incident." }
+        }
+      },
+      "RouteDetailsResult": {
+        "type": "object",
+        "description": "A calculated route expressed as a GeoJSON feature collection. The route geometry feature carries summary properties including total distance in meters and total travel time in seconds, and the guidance section carries turn by turn instructions.",
+        "properties": {
+          "type": { "type": "string", "description": "Always the literal value FeatureCollection." },
+          "features": {
+            "type": "array",
+            "description": "The route geometry and waypoints. Report the distance and duration from the summary properties rather than attempting to measure the coordinate list.",
+            "items": {
+              "type": "object",
+              "description": "A GeoJSON feature representing either the route line or a waypoint.",
+              "properties": {
+                "type": { "type": "string", "description": "Always the literal value Feature." },
+                "geometry": { "type": "object", "description": "The GeoJSON geometry of this feature.", "additionalProperties": true },
+                "properties": { "type": "object", "description": "Feature attributes, including the route summary with lengthInMeters and durationInSeconds.", "additionalProperties": true }
+              }
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  }
+}

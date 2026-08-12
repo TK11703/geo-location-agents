@@ -1,0 +1,304 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Weather Specialist Data Feed",
+    "description": "Current weather conditions and active severe-weather alerts for a specific point on Earth. Every operation requires an explicit latitude and longitude. This service cannot look up coordinates from a place name, so the caller must already know the coordinates.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://holonet-apim-databank-8108.azure-api.net/geo",
+      "description": "APIM gateway base URL. APIM validates the Entra token, then forwards to the function app backend."
+    }
+  ],
+  "paths": {
+    "/weather/conditions": {
+      "get": {
+        "operationId": "getWeatherConditions",
+        "summary": "Get current weather conditions at a coordinate",
+        "description": "Returns the current observed weather at the given latitude and longitude, including temperature, apparent temperature, wind speed and direction, relative humidity, visibility, cloud cover, precipitation, and a short text summary of the sky condition. Use this for questions about what the weather is like right now at a known point.",
+        "parameters": [
+          {
+            "name": "latitude",
+            "in": "query",
+            "required": true,
+            "description": "Latitude of the point of interest in decimal degrees, between -90 and 90. Positive values are north of the equator.",
+            "schema": { "type": "number", "format": "double", "minimum": -90, "maximum": 90 }
+          },
+          {
+            "name": "longitude",
+            "in": "query",
+            "required": true,
+            "description": "Longitude of the point of interest in decimal degrees, between -180 and 180. Positive values are east of the prime meridian.",
+            "schema": { "type": "number", "format": "double", "minimum": -180, "maximum": 180 }
+          },
+          {
+            "name": "unit",
+            "in": "query",
+            "required": false,
+            "description": "Unit system for the returned measurements. Use metric for Celsius and kilometers, or imperial for Fahrenheit and miles. Defaults to metric.",
+            "schema": { "type": "string", "enum": ["metric", "imperial"], "default": "metric" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current conditions were retrieved successfully.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CurrentConditionsResult" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/InvalidRequest" },
+          "502": { "$ref": "#/components/responses/UpstreamFailure" },
+          "503": { "$ref": "#/components/responses/NotConfigured" }
+        }
+      }
+    },
+    "/weather/alerts": {
+      "get": {
+        "operationId": "getSevereWeatherAlerts",
+        "summary": "Get global severe weather alerts at a coordinate",
+        "description": "Returns active severe weather alerts issued by the responsible government meteorological agency for the area containing the given coordinate. This operation has worldwide coverage. For locations inside the United States, prefer getNwsAlerts, which returns richer detail including evacuation instructions.",
+        "parameters": [
+          {
+            "name": "latitude",
+            "in": "query",
+            "required": true,
+            "description": "Latitude of the point of interest in decimal degrees, between -90 and 90.",
+            "schema": { "type": "number", "format": "double", "minimum": -90, "maximum": 90 }
+          },
+          {
+            "name": "longitude",
+            "in": "query",
+            "required": true,
+            "description": "Longitude of the point of interest in decimal degrees, between -180 and 180.",
+            "schema": { "type": "number", "format": "double", "minimum": -180, "maximum": 180 }
+          },
+          {
+            "name": "unit",
+            "in": "query",
+            "required": false,
+            "description": "Unit system for any measurements embedded in the alert text. Defaults to metric.",
+            "schema": { "type": "string", "enum": ["metric", "imperial"], "default": "metric" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Severe weather alerts were retrieved successfully. An empty results array means no alerts are active for this location.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SevereWeatherAlertsResult" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/InvalidRequest" },
+          "502": { "$ref": "#/components/responses/UpstreamFailure" },
+          "503": { "$ref": "#/components/responses/NotConfigured" }
+        }
+      }
+    },
+    "/alerts/nws": {
+      "get": {
+        "operationId": "getNwsAlerts",
+        "summary": "Get detailed United States National Weather Service alerts at a coordinate",
+        "description": "Returns active alerts from the United States National Weather Service for the given coordinate, including severity, urgency, certainty, the affected area description, protective action instructions, and onset and expiry times. Coverage is limited to the United States and its territories. Always check the isWithinCoverage field: when it is false the location is outside National Weather Service coverage and an empty alert list does not mean the location is safe, so fall back to getSevereWeatherAlerts.",
+        "parameters": [
+          {
+            "name": "latitude",
+            "in": "query",
+            "required": true,
+            "description": "Latitude of the point of interest in decimal degrees, between -90 and 90.",
+            "schema": { "type": "number", "format": "double", "minimum": -90, "maximum": 90 }
+          },
+          {
+            "name": "longitude",
+            "in": "query",
+            "required": true,
+            "description": "Longitude of the point of interest in decimal degrees, between -180 and 180.",
+            "schema": { "type": "number", "format": "double", "minimum": -180, "maximum": 180 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The alert lookup completed. Inspect isWithinCoverage before interpreting an empty alerts array.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/NwsAlertResult" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/InvalidRequest" },
+          "502": { "$ref": "#/components/responses/UpstreamFailure" },
+          "503": { "$ref": "#/components/responses/NotConfigured" }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "InvalidRequest": {
+        "description": "The request parameters were missing or invalid. The detail field explains what to correct.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+        }
+      },
+      "UpstreamFailure": {
+        "description": "The upstream weather provider could not complete the request.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+        }
+      },
+      "NotConfigured": {
+        "description": "The weather service is not configured on the server and cannot answer requests.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+        }
+      }
+    },
+    "schemas": {
+      "ProblemDetails": {
+        "type": "object",
+        "description": "A machine readable description of a failed request.",
+        "properties": {
+          "status": { "type": "integer", "description": "The HTTP status code." },
+          "title": { "type": "string", "description": "A short summary of the problem type." },
+          "detail": { "type": "string", "description": "An explanation of what went wrong and how to correct it." }
+        }
+      },
+      "CurrentConditionsResult": {
+        "type": "object",
+        "description": "Current observed conditions as returned by the Azure Maps weather provider.",
+        "properties": {
+          "results": {
+            "type": "array",
+            "description": "Observation records for the requested point. Normally contains a single entry.",
+            "items": {
+              "type": "object",
+              "description": "A single current-conditions observation.",
+              "properties": {
+                "dateTime": { "type": "string", "description": "The observation timestamp in ISO 8601 format." },
+                "phrase": { "type": "string", "description": "A short human readable description of the sky condition, for example Partly cloudy." },
+                "temperature": { "$ref": "#/components/schemas/Measurement" },
+                "realFeelTemperature": { "$ref": "#/components/schemas/Measurement" },
+                "relativeHumidity": { "type": "integer", "description": "Relative humidity as a percentage from 0 to 100." },
+                "wind": {
+                  "type": "object",
+                  "description": "Wind speed and direction.",
+                  "properties": {
+                    "direction": {
+                      "type": "object",
+                      "description": "The compass direction the wind is blowing from.",
+                      "properties": {
+                        "degrees": { "type": "number", "description": "Wind origin bearing in degrees clockwise from true north." },
+                        "localizedDescription": { "type": "string", "description": "Cardinal direction abbreviation, for example NW." }
+                      }
+                    },
+                    "speed": { "$ref": "#/components/schemas/Measurement" }
+                  }
+                },
+                "windGust": {
+                  "type": "object",
+                  "description": "Peak wind gust.",
+                  "properties": { "speed": { "$ref": "#/components/schemas/Measurement" } }
+                },
+                "visibility": { "$ref": "#/components/schemas/Measurement" },
+                "cloudCover": { "type": "integer", "description": "Cloud cover as a percentage from 0 to 100." },
+                "precipitationSummary": {
+                  "type": "object",
+                  "description": "Accumulated precipitation over recent time windows.",
+                  "additionalProperties": true
+                },
+                "hasPrecipitation": { "type": "boolean", "description": "True when precipitation is falling at the observation time." }
+              }
+            }
+          }
+        }
+      },
+      "Measurement": {
+        "type": "object",
+        "description": "A numeric measurement together with the unit it is expressed in.",
+        "properties": {
+          "value": { "type": "number", "description": "The measured value." },
+          "unit": { "type": "string", "description": "The unit symbol, for example C, F, km/h, or mi/h." }
+        }
+      },
+      "SevereWeatherAlertsResult": {
+        "type": "object",
+        "description": "Active severe weather alerts from the responsible national meteorological agency.",
+        "properties": {
+          "results": {
+            "type": "array",
+            "description": "Active alerts for the requested point. An empty array means no alerts are in effect.",
+            "items": {
+              "type": "object",
+              "description": "A single severe weather alert.",
+              "properties": {
+                "countryCode": { "type": "string", "description": "ISO country code of the issuing agency." },
+                "alertId": { "type": "integer", "description": "Provider identifier for the alert." },
+                "description": {
+                  "type": "object",
+                  "description": "Localized alert naming.",
+                  "properties": {
+                    "localized": { "type": "string", "description": "The alert name in the local language." },
+                    "english": { "type": "string", "description": "The alert name in English." }
+                  }
+                },
+                "category": { "type": "string", "description": "The hazard category, for example Flood or Wind." },
+                "priority": { "type": "integer", "description": "Relative importance, where lower numbers are more severe." },
+                "class": { "type": "string", "description": "The provider specific alert class." },
+                "level": { "type": "string", "description": "The alert level, for example Warning, Watch, or Advisory." },
+                "source": { "type": "string", "description": "The issuing agency name." },
+                "alertAreas": {
+                  "type": "array",
+                  "description": "The geographic areas the alert applies to and the time window for each.",
+                  "items": { "type": "object", "additionalProperties": true }
+                }
+              }
+            }
+          }
+        }
+      },
+      "NwsAlertResult": {
+        "type": "object",
+        "description": "United States National Weather Service alerts for a point, with explicit coverage reporting.",
+        "properties": {
+          "latitude": { "type": "number", "description": "The latitude that was queried." },
+          "longitude": { "type": "number", "description": "The longitude that was queried." },
+          "isWithinCoverage": {
+            "type": "boolean",
+            "description": "True when the coordinate falls inside the National Weather Service coverage area. When false, the alerts array is empty because no data exists rather than because conditions are calm, and the caller must say so instead of implying the location is clear."
+          },
+          "coverageNote": { "type": "string", "description": "An explanation of the coverage result, present when the coordinate is outside coverage." },
+          "alertCount": { "type": "integer", "description": "The number of active alerts returned." },
+          "maxSeverity": { "type": "string", "description": "The highest severity across all returned alerts, one of Extreme, Severe, Moderate, Minor, Unknown, or None." },
+          "hasEvacuationOrder": { "type": "boolean", "description": "True when at least one alert directs people to evacuate. Treat this as the highest priority signal in any summary." },
+          "alerts": {
+            "type": "array",
+            "description": "The active alerts, ordered from most to least severe.",
+            "items": { "$ref": "#/components/schemas/NwsAlert" }
+          }
+        }
+      },
+      "NwsAlert": {
+        "type": "object",
+        "description": "A single National Weather Service alert.",
+        "properties": {
+          "id": { "type": "string", "description": "The unique alert identifier." },
+          "event": { "type": "string", "description": "The event name, for example Tornado Warning or Flash Flood Watch." },
+          "severity": { "type": "string", "description": "Severity, one of Extreme, Severe, Moderate, Minor, or Unknown." },
+          "certainty": { "type": "string", "description": "Confidence that the event will occur, for example Observed or Likely." },
+          "urgency": { "type": "string", "description": "How soon action is required, for example Immediate or Expected." },
+          "headline": { "type": "string", "description": "A one line summary of the alert." },
+          "description": { "type": "string", "description": "The full narrative describing the hazard." },
+          "instruction": { "type": "string", "description": "Protective actions the public should take." },
+          "response": { "type": "string", "description": "The recommended response type, for example Evacuate, Shelter, or Avoid." },
+          "areaDescription": { "type": "string", "description": "The counties or zones covered by the alert." },
+          "onset": { "type": "string", "description": "When the hazard begins, in ISO 8601 format." },
+          "expires": { "type": "string", "description": "When the alert message expires, in ISO 8601 format." },
+          "ends": { "type": "string", "description": "When the hazard is expected to end, in ISO 8601 format." }
+        }
+      }
+    }
+  }
+}

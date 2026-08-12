@@ -1,0 +1,7 @@
+.git*
+.azure/
+tests/
+**/bin/
+**/obj/
+README.md
+ERDC.Agents.slnx

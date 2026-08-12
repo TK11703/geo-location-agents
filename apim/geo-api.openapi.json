@@ -1,0 +1,1339 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "ERDC Agents Geo API",
+    "version": "1.0.0",
+    "description": "Weather, terrain, mobility, and location endpoints consumed by Foundry specialist agents."
+  },
+  "servers": [
+    {
+      "url": "https://holonet-apim-databank-8108.azure-api.net/geo"
+    }
+  ],
+  "paths": {
+    "/geocode/reverse": {
+      "get": {
+        "operationId": "reverseGeocodePoint",
+        "summary": "Get the street address for a coordinate",
+        "description": "Converts a latitude and longitude into the nearest known street address, along with the locality, postal code, and country. Use this to tell the user what place a coordinate refers to. This works in one direction only: it turns coordinates into an address and cannot turn an address or city name into coordinates.",
+        "parameters": [
+          {
+            "name": "latitude",
+            "in": "query",
+            "required": true,
+            "description": "Latitude of the point to describe, in decimal degrees between -90 and 90.",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "minimum": -90,
+              "maximum": 90
+            }
+          },
+          {
+            "name": "longitude",
+            "in": "query",
+            "required": true,
+            "description": "Longitude of the point to describe, in decimal degrees between -180 and 180.",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "minimum": -180,
+              "maximum": 180
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The lookup completed. Check hasAddressMatch before quoting an address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReverseGeocodeResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamFailure"
+          },
+          "503": {
+            "$ref": "#/components/responses/NotConfigured"
+          }
+        }
+      }
+    },
+    "/map": {
+      "get": {
+        "operationId": "getMapImageUrl",
+        "summary": "Render a map image of a coordinate and return a temporary link to it",
+        "description": "Renders a static map centered on the given coordinate and returns a temporary link to the resulting picture. Use this when the user asks to see or be shown a location. Give the returned imageUrl to the user as a link; the picture itself cannot be read or described here, so do not claim to know what it depicts beyond the location and map style that were requested. The link stops working after the time given in expiresOn.",
+        "parameters": [
+          {
+            "name": "latitude",
+            "in": "query",
+            "required": true,
+            "description": "Latitude of the point to center the map on, in decimal degrees between -90 and 90.",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "minimum": -90,
+              "maximum": 90
+            }
+          },
+          {
+            "name": "longitude",
+            "in": "query",
+            "required": true,
+            "description": "Longitude of the point to center the map on, in decimal degrees between -180 and 180.",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "minimum": -180,
+              "maximum": 180
+            }
+          },
+          {
+            "name": "output",
+            "in": "query",
+            "required": true,
+            "description": "Response format. Always send url, which returns a link to the picture. The other format returns raw image bytes that cannot be handled here.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "url"
+              ],
+              "default": "url"
+            }
+          },
+          {
+            "name": "mapType",
+            "in": "query",
+            "required": false,
+            "description": "Visual style of the map. Use road for a standard labeled street map, satellite for aerial imagery, or dark for a dark themed street map. Defaults to road.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "road",
+                "dark",
+                "satellite"
+              ],
+              "default": "road"
+            }
+          },
+          {
+            "name": "radiusMeters",
+            "in": "query",
+            "required": false,
+            "description": "How much ground the map should cover, expressed as a radius in meters from the center point, between 25 and 500000. Prefer this over zoom because it is expressed in real world distance. Do not send both radiusMeters and zoom.",
+            "schema": {
+              "type": "integer",
+              "minimum": 25,
+              "maximum": 500000
+            }
+          },
+          {
+            "name": "zoom",
+            "in": "query",
+            "required": false,
+            "description": "Map zoom level from 0 for the whole world to 20 for individual buildings, with a maximum of 19 for satellite imagery. Do not send both zoom and radiusMeters. Defaults to 12.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 20,
+              "default": 12
+            }
+          },
+          {
+            "name": "width",
+            "in": "query",
+            "required": false,
+            "description": "Width of the rendered image in pixels, between 80 and 2000. Defaults to 512.",
+            "schema": {
+              "type": "integer",
+              "minimum": 80,
+              "maximum": 2000,
+              "default": 512
+            }
+          },
+          {
+            "name": "height",
+            "in": "query",
+            "required": false,
+            "description": "Height of the rendered image in pixels, between 80 and 1500. Defaults to 512.",
+            "schema": {
+              "type": "integer",
+              "minimum": 80,
+              "maximum": 1500,
+              "default": 512
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The map image was rendered and stored, and a temporary link is returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapImageUrlResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "404": {
+            "description": "The requested location could not be found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamFailure"
+          },
+          "503": {
+            "$ref": "#/components/responses/NotConfigured"
+          }
+        }
+      }
+    },
+    "/traffic/incidents": {
+      "get": {
+        "operationId": "getTrafficIncidents",
+        "summary": "Get active traffic incidents near a coordinate",
+        "description": "Returns active traffic incidents such as crashes, road closures, construction, and congestion within a radius of the given coordinate, sorted from nearest to farthest. Use this to answer whether roads near a location are blocked, congested, or passable right now.",
+        "parameters": [
+          {
+            "name": "latitude",
+            "in": "query",
+            "required": true,
+            "description": "Latitude of the center of the search area in decimal degrees, between -90 and 90.",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "minimum": -90,
+              "maximum": 90
+            }
+          },
+          {
+            "name": "longitude",
+            "in": "query",
+            "required": true,
+            "description": "Longitude of the center of the search area in decimal degrees, between -180 and 180.",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "minimum": -180,
+              "maximum": 180
+            }
+          },
+          {
+            "name": "radiusMeters",
+            "in": "query",
+            "required": false,
+            "description": "Radius of the search area in meters, between 50 and 25000. Use roughly 2000 for a neighborhood and 25000 for a metropolitan area. Defaults to 2000.",
+            "schema": {
+              "type": "integer",
+              "minimum": 50,
+              "maximum": 25000,
+              "default": 2000
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The incident search completed. An empty incidents array means no active incidents were reported in the area.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrafficIncidentResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamFailure"
+          },
+          "503": {
+            "$ref": "#/components/responses/NotConfigured"
+          }
+        }
+      }
+    },
+    "/route": {
+      "get": {
+        "operationId": "getRouteDetails",
+        "summary": "Calculate a driving, trucking, or walking route between two coordinates",
+        "description": "Calculates a route from an origin coordinate to a destination coordinate and returns the path as GeoJSON together with total distance, estimated travel time, and turn by turn guidance. Use this to answer how far apart two known points are by road, how long the trip takes, and which way the route goes. For trucks, supply the vehicle dimension and weight parameters so that legal restrictions such as low bridges and weight limits are respected.",
+        "parameters": [
+          {
+            "name": "originLatitude",
+            "in": "query",
+            "required": true,
+            "description": "Latitude of the starting point in decimal degrees, between -90 and 90.",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "minimum": -90,
+              "maximum": 90
+            }
+          },
+          {
+            "name": "originLongitude",
+            "in": "query",
+            "required": true,
+            "description": "Longitude of the starting point in decimal degrees, between -180 and 180.",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "minimum": -180,
+              "maximum": 180
+            }
+          },
+          {
+            "name": "destinationLatitude",
+            "in": "query",
+            "required": true,
+            "description": "Latitude of the ending point in decimal degrees, between -90 and 90.",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "minimum": -90,
+              "maximum": 90
+            }
+          },
+          {
+            "name": "destinationLongitude",
+            "in": "query",
+            "required": true,
+            "description": "Longitude of the ending point in decimal degrees, between -180 and 180.",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "minimum": -180,
+              "maximum": 180
+            }
+          },
+          {
+            "name": "output",
+            "in": "query",
+            "required": true,
+            "description": "Response format. Always send details, which returns machine readable route data. The other formats return a picture that cannot be interpreted here.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "details"
+              ],
+              "default": "details"
+            }
+          },
+          {
+            "name": "travelMode",
+            "in": "query",
+            "required": false,
+            "description": "How the trip is made. Use car for ordinary vehicles, truck for commercial vehicles subject to size and weight restrictions, or pedestrian for walking. Defaults to car.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "car",
+                "truck",
+                "pedestrian"
+              ],
+              "default": "car"
+            }
+          },
+          {
+            "name": "isVehicleCommercial",
+            "in": "query",
+            "required": false,
+            "description": "Whether the vehicle is used for commercial purposes, which changes which roads are legal. Only valid when travelMode is truck.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "weight",
+            "in": "query",
+            "required": false,
+            "description": "Total vehicle weight in kilograms, used to respect posted weight limits. Only valid when travelMode is truck.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "axleCount",
+            "in": "query",
+            "required": false,
+            "description": "Number of axles on the vehicle. Only valid when travelMode is truck.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "axleWeight",
+            "in": "query",
+            "required": false,
+            "description": "Weight per axle in kilograms, used to respect posted axle limits. Only valid when travelMode is truck.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "height",
+            "in": "query",
+            "required": false,
+            "description": "Vehicle height in meters, used to avoid low bridges and tunnels. Only valid when travelMode is truck.",
+            "schema": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          {
+            "name": "width",
+            "in": "query",
+            "required": false,
+            "description": "Vehicle width in meters, used to avoid narrow roads. Only valid when travelMode is truck.",
+            "schema": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          {
+            "name": "length",
+            "in": "query",
+            "required": false,
+            "description": "Vehicle length in meters, used to avoid roads with turning restrictions. Only valid when travelMode is truck.",
+            "schema": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          {
+            "name": "maxSpeed",
+            "in": "query",
+            "required": false,
+            "description": "Maximum speed the vehicle can travel in kilometers per hour, used to refine travel time. Only valid when travelMode is truck.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "loadType",
+            "in": "query",
+            "required": false,
+            "description": "Hazardous material classifications the vehicle is carrying, which restrict it from certain roads and tunnels. Repeat this parameter once per classification. Only valid when travelMode is truck.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The route was calculated successfully and is returned as a GeoJSON feature collection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouteDetailsResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamFailure"
+          },
+          "503": {
+            "$ref": "#/components/responses/NotConfigured"
+          }
+        }
+      }
+    },
+    "/elevation": {
+      "get": {
+        "operationId": "getElevationProfile",
+        "summary": "Get ground elevation and terrain relief around a coordinate",
+        "description": "Returns the ground elevation at the given coordinate plus a ring of surrounding sample points, and summarizes the local terrain as minimum, maximum, and range of elevation along with the steepest slope found. Use this to answer questions about how high, how hilly, how steep, or how flat a location is. Elevation is height of the ground surface above sea level and is not the height of buildings or the altitude of aircraft.",
+        "parameters": [
+          {
+            "name": "latitude",
+            "in": "query",
+            "required": true,
+            "description": "Latitude of the center point in decimal degrees, between -90 and 90.",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "minimum": -90,
+              "maximum": 90
+            }
+          },
+          {
+            "name": "longitude",
+            "in": "query",
+            "required": true,
+            "description": "Longitude of the center point in decimal degrees, between -180 and 180.",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "minimum": -180,
+              "maximum": 180
+            }
+          },
+          {
+            "name": "radiusMeters",
+            "in": "query",
+            "required": false,
+            "description": "Distance in meters from the center point at which the surrounding samples are taken, between 10 and 5000. Use a small radius such as 100 to describe the immediate site and a large radius such as 2000 to describe the surrounding landscape. Defaults to 100.",
+            "schema": {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 5000,
+              "default": 100
+            }
+          },
+          {
+            "name": "sampleCount",
+            "in": "query",
+            "required": false,
+            "description": "How many points to sample evenly around the ring, between 4 and 16. More samples give a more reliable slope estimate but return more data. Defaults to 8.",
+            "schema": {
+              "type": "integer",
+              "minimum": 4,
+              "maximum": 16,
+              "default": 8
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The elevation profile was computed successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ElevationResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request parameters were missing or invalid. The detail field explains what to correct.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The upstream elevation provider could not complete the request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/weather/conditions": {
+      "get": {
+        "operationId": "getWeatherConditions",
+        "summary": "Get current weather conditions at a coordinate",
+        "description": "Returns the current observed weather at the given latitude and longitude, including temperature, apparent temperature, wind speed and direction, relative humidity, visibility, cloud cover, precipitation, and a short text summary of the sky condition. Use this for questions about what the weather is like right now at a known point.",
+        "parameters": [
+          {
+            "name": "latitude",
+            "in": "query",
+            "required": true,
+            "description": "Latitude of the point of interest in decimal degrees, between -90 and 90. Positive values are north of the equator.",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "minimum": -90,
+              "maximum": 90
+            }
+          },
+          {
+            "name": "longitude",
+            "in": "query",
+            "required": true,
+            "description": "Longitude of the point of interest in decimal degrees, between -180 and 180. Positive values are east of the prime meridian.",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "minimum": -180,
+              "maximum": 180
+            }
+          },
+          {
+            "name": "unit",
+            "in": "query",
+            "required": false,
+            "description": "Unit system for the returned measurements. Use metric for Celsius and kilometers, or imperial for Fahrenheit and miles. Defaults to metric.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "metric",
+                "imperial"
+              ],
+              "default": "metric"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current conditions were retrieved successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentConditionsResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamFailure"
+          },
+          "503": {
+            "$ref": "#/components/responses/NotConfigured"
+          }
+        }
+      }
+    },
+    "/weather/alerts": {
+      "get": {
+        "operationId": "getSevereWeatherAlerts",
+        "summary": "Get global severe weather alerts at a coordinate",
+        "description": "Returns active severe weather alerts issued by the responsible government meteorological agency for the area containing the given coordinate. This operation has worldwide coverage. For locations inside the United States, prefer getNwsAlerts, which returns richer detail including evacuation instructions.",
+        "parameters": [
+          {
+            "name": "latitude",
+            "in": "query",
+            "required": true,
+            "description": "Latitude of the point of interest in decimal degrees, between -90 and 90.",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "minimum": -90,
+              "maximum": 90
+            }
+          },
+          {
+            "name": "longitude",
+            "in": "query",
+            "required": true,
+            "description": "Longitude of the point of interest in decimal degrees, between -180 and 180.",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "minimum": -180,
+              "maximum": 180
+            }
+          },
+          {
+            "name": "unit",
+            "in": "query",
+            "required": false,
+            "description": "Unit system for any measurements embedded in the alert text. Defaults to metric.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "metric",
+                "imperial"
+              ],
+              "default": "metric"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Severe weather alerts were retrieved successfully. An empty results array means no alerts are active for this location.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SevereWeatherAlertsResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamFailure"
+          },
+          "503": {
+            "$ref": "#/components/responses/NotConfigured"
+          }
+        }
+      }
+    },
+    "/alerts/nws": {
+      "get": {
+        "operationId": "getNwsAlerts",
+        "summary": "Get detailed United States National Weather Service alerts at a coordinate",
+        "description": "Returns active alerts from the United States National Weather Service for the given coordinate, including severity, urgency, certainty, the affected area description, protective action instructions, and onset and expiry times. Coverage is limited to the United States and its territories. Always check the isWithinCoverage field: when it is false the location is outside National Weather Service coverage and an empty alert list does not mean the location is safe, so fall back to getSevereWeatherAlerts.",
+        "parameters": [
+          {
+            "name": "latitude",
+            "in": "query",
+            "required": true,
+            "description": "Latitude of the point of interest in decimal degrees, between -90 and 90.",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "minimum": -90,
+              "maximum": 90
+            }
+          },
+          {
+            "name": "longitude",
+            "in": "query",
+            "required": true,
+            "description": "Longitude of the point of interest in decimal degrees, between -180 and 180.",
+            "schema": {
+              "type": "number",
+              "format": "double",
+              "minimum": -180,
+              "maximum": 180
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The alert lookup completed. Inspect isWithinCoverage before interpreting an empty alerts array.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NwsAlertResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamFailure"
+          },
+          "503": {
+            "$ref": "#/components/responses/NotConfigured"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "InvalidRequest": {
+        "description": "The request parameters were missing or invalid. The detail field explains what to correct.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
+        }
+      },
+      "UpstreamFailure": {
+        "description": "The upstream mapping provider could not complete the request.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
+        }
+      },
+      "NotConfigured": {
+        "description": "The mapping service is not configured on the server and cannot answer requests.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "ProblemDetails": {
+        "type": "object",
+        "description": "A machine readable description of a failed request.",
+        "properties": {
+          "status": {
+            "type": "integer",
+            "description": "The HTTP status code."
+          },
+          "title": {
+            "type": "string",
+            "description": "A short summary of the problem type."
+          },
+          "detail": {
+            "type": "string",
+            "description": "An explanation of what went wrong and how to correct it."
+          }
+        }
+      },
+      "ReverseGeocodeResult": {
+        "type": "object",
+        "description": "The place description for a coordinate.",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "description": "The latitude that was queried."
+          },
+          "longitude": {
+            "type": "number",
+            "description": "The longitude that was queried."
+          },
+          "hasAddressMatch": {
+            "type": "boolean",
+            "description": "True when an address was found. When false, the coordinate is in an unaddressed area such as open water, wilderness, or farmland, and the address fields are empty. Say so plainly rather than guessing a nearby address."
+          },
+          "formattedAddress": {
+            "type": "string",
+            "description": "The complete address as a single display ready line."
+          },
+          "addressLine": {
+            "type": "string",
+            "description": "The street number and street name portion of the address."
+          },
+          "locality": {
+            "type": "string",
+            "description": "The city, town, or neighborhood name."
+          },
+          "postalCode": {
+            "type": "string",
+            "description": "The postal or ZIP code."
+          },
+          "countryCode": {
+            "type": "string",
+            "description": "The ISO country code."
+          },
+          "resultType": {
+            "type": "string",
+            "description": "What kind of feature was matched, for example Point Address, Street, or Geography."
+          },
+          "confidence": {
+            "type": "string",
+            "description": "How confident the provider is in the match, one of High, Medium, or Low."
+          },
+          "isLikelyPrivateRoad": {
+            "type": "boolean",
+            "description": "True when the matched road appears to be private, which matters when judging whether a location is publicly reachable."
+          }
+        }
+      },
+      "MapImageUrlResult": {
+        "type": "object",
+        "description": "A temporary link to a rendered map image.",
+        "properties": {
+          "imageUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "A time limited link to the rendered map picture. Present this to the user as a clickable link. The picture contents cannot be inspected here."
+          },
+          "expiresOn": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The moment the link stops working, in ISO 8601 format. Mention that the link is temporary when sharing it."
+          }
+        }
+      },
+      "TrafficIncidentResult": {
+        "type": "object",
+        "description": "Active traffic incidents within a radius of a point.",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "description": "The latitude of the center of the search area."
+          },
+          "longitude": {
+            "type": "number",
+            "description": "The longitude of the center of the search area."
+          },
+          "radiusMeters": {
+            "type": "integer",
+            "description": "The search radius in meters that was used."
+          },
+          "incidentCount": {
+            "type": "integer",
+            "description": "The total number of active incidents found."
+          },
+          "roadClosureCount": {
+            "type": "integer",
+            "description": "How many of the incidents fully close a road. Treat this as the highest priority signal for whether an area is reachable."
+          },
+          "nearestIncidentMeters": {
+            "type": "number",
+            "description": "Distance in meters from the center point to the closest incident, or null when no incidents were found.",
+            "nullable": true
+          },
+          "incidents": {
+            "type": "array",
+            "description": "The individual incidents, ordered from nearest to farthest. Summarize these rather than listing every one.",
+            "items": {
+              "$ref": "#/components/schemas/TrafficIncident"
+            }
+          }
+        }
+      },
+      "TrafficIncident": {
+        "type": "object",
+        "description": "A single active traffic incident.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The provider identifier for the incident."
+          },
+          "incidentType": {
+            "type": "string",
+            "description": "The kind of incident, for example Accident, Construction, or Congestion."
+          },
+          "title": {
+            "type": "string",
+            "description": "A short label for the incident, usually naming the affected road."
+          },
+          "description": {
+            "type": "string",
+            "description": "A fuller narrative of what is happening and where."
+          },
+          "severity": {
+            "type": "integer",
+            "description": "Relative impact of the incident, where larger numbers mean greater disruption.",
+            "nullable": true
+          },
+          "isRoadClosed": {
+            "type": "boolean",
+            "description": "True when the road is completely closed to traffic."
+          },
+          "isTrafficJam": {
+            "type": "boolean",
+            "description": "True when the incident is causing a traffic jam."
+          },
+          "delaySeconds": {
+            "type": "number",
+            "description": "Estimated additional travel time in seconds caused by this incident.",
+            "nullable": true
+          },
+          "startTime": {
+            "type": "string",
+            "description": "When the incident began, in ISO 8601 format.",
+            "nullable": true
+          },
+          "endTime": {
+            "type": "string",
+            "description": "When the incident is expected to clear, in ISO 8601 format.",
+            "nullable": true
+          },
+          "latitude": {
+            "type": "number",
+            "description": "The latitude of the incident."
+          },
+          "longitude": {
+            "type": "number",
+            "description": "The longitude of the incident."
+          },
+          "distanceMeters": {
+            "type": "number",
+            "description": "Distance in meters from the queried center point to this incident."
+          }
+        }
+      },
+      "RouteDetailsResult": {
+        "type": "object",
+        "description": "A calculated route expressed as a GeoJSON feature collection. The route geometry feature carries summary properties including total distance in meters and total travel time in seconds, and the guidance section carries turn by turn instructions.",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Always the literal value FeatureCollection."
+          },
+          "features": {
+            "type": "array",
+            "description": "The route geometry and waypoints. Report the distance and duration from the summary properties rather than attempting to measure the coordinate list.",
+            "items": {
+              "type": "object",
+              "description": "A GeoJSON feature representing either the route line or a waypoint.",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "description": "Always the literal value Feature."
+                },
+                "geometry": {
+                  "type": "object",
+                  "description": "The GeoJSON geometry of this feature.",
+                  "additionalProperties": true
+                },
+                "properties": {
+                  "type": "object",
+                  "description": "Feature attributes, including the route summary with lengthInMeters and durationInSeconds.",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      "ElevationResult": {
+        "type": "object",
+        "description": "Ground elevation at a point and a summary of the terrain relief around it.",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "description": "The latitude of the center point that was queried."
+          },
+          "longitude": {
+            "type": "number",
+            "description": "The longitude of the center point that was queried."
+          },
+          "radiusMeters": {
+            "type": "integer",
+            "description": "The sampling radius in meters that was used."
+          },
+          "centerElevationMeters": {
+            "type": "number",
+            "description": "Ground elevation at the center point in meters above sea level. Null when the provider has no data for that point, which commonly happens outside the United States.",
+            "nullable": true
+          },
+          "minElevationMeters": {
+            "type": "number",
+            "description": "The lowest elevation in meters among the center point and all ring samples.",
+            "nullable": true
+          },
+          "maxElevationMeters": {
+            "type": "number",
+            "description": "The highest elevation in meters among the center point and all ring samples.",
+            "nullable": true
+          },
+          "elevationRangeMeters": {
+            "type": "number",
+            "description": "The difference in meters between the highest and lowest sampled elevation. A small value indicates flat terrain and a large value indicates rugged terrain.",
+            "nullable": true
+          },
+          "maxSlopePercent": {
+            "type": "number",
+            "description": "The steepest slope found between the center point and any ring sample, as a percentage where 100 means a one meter rise over one meter of horizontal distance. Values below about 5 are near level, and values above about 30 are steep enough to impede vehicles.",
+            "nullable": true
+          },
+          "samples": {
+            "type": "array",
+            "description": "The individual sample points taken around the ring. Summarize these rather than listing every one.",
+            "items": {
+              "$ref": "#/components/schemas/ElevationSample"
+            }
+          }
+        }
+      },
+      "ElevationSample": {
+        "type": "object",
+        "description": "A single elevation reading taken around the center point.",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "description": "The latitude of this sample."
+          },
+          "longitude": {
+            "type": "number",
+            "description": "The longitude of this sample."
+          },
+          "bearingDegrees": {
+            "type": "number",
+            "description": "The compass bearing from the center point to this sample, in degrees clockwise from true north."
+          },
+          "distanceMeters": {
+            "type": "number",
+            "description": "The distance from the center point to this sample, in meters."
+          },
+          "elevationMeters": {
+            "type": "number",
+            "description": "Ground elevation at this sample in meters above sea level, or null when the provider has no data.",
+            "nullable": true
+          }
+        }
+      },
+      "CurrentConditionsResult": {
+        "type": "object",
+        "description": "Current observed conditions as returned by the Azure Maps weather provider.",
+        "properties": {
+          "results": {
+            "type": "array",
+            "description": "Observation records for the requested point. Normally contains a single entry.",
+            "items": {
+              "type": "object",
+              "description": "A single current-conditions observation.",
+              "properties": {
+                "dateTime": {
+                  "type": "string",
+                  "description": "The observation timestamp in ISO 8601 format."
+                },
+                "phrase": {
+                  "type": "string",
+                  "description": "A short human readable description of the sky condition, for example Partly cloudy."
+                },
+                "temperature": {
+                  "$ref": "#/components/schemas/Measurement"
+                },
+                "realFeelTemperature": {
+                  "$ref": "#/components/schemas/Measurement"
+                },
+                "relativeHumidity": {
+                  "type": "integer",
+                  "description": "Relative humidity as a percentage from 0 to 100."
+                },
+                "wind": {
+                  "type": "object",
+                  "description": "Wind speed and direction.",
+                  "properties": {
+                    "direction": {
+                      "type": "object",
+                      "description": "The compass direction the wind is blowing from.",
+                      "properties": {
+                        "degrees": {
+                          "type": "number",
+                          "description": "Wind origin bearing in degrees clockwise from true north."
+                        },
+                        "localizedDescription": {
+                          "type": "string",
+                          "description": "Cardinal direction abbreviation, for example NW."
+                        }
+                      }
+                    },
+                    "speed": {
+                      "$ref": "#/components/schemas/Measurement"
+                    }
+                  }
+                },
+                "windGust": {
+                  "type": "object",
+                  "description": "Peak wind gust.",
+                  "properties": {
+                    "speed": {
+                      "$ref": "#/components/schemas/Measurement"
+                    }
+                  }
+                },
+                "visibility": {
+                  "$ref": "#/components/schemas/Measurement"
+                },
+                "cloudCover": {
+                  "type": "integer",
+                  "description": "Cloud cover as a percentage from 0 to 100."
+                },
+                "precipitationSummary": {
+                  "type": "object",
+                  "description": "Accumulated precipitation over recent time windows.",
+                  "additionalProperties": true
+                },
+                "hasPrecipitation": {
+                  "type": "boolean",
+                  "description": "True when precipitation is falling at the observation time."
+                }
+              }
+            }
+          }
+        }
+      },
+      "Measurement": {
+        "type": "object",
+        "description": "A numeric measurement together with the unit it is expressed in.",
+        "properties": {
+          "value": {
+            "type": "number",
+            "description": "The measured value."
+          },
+          "unit": {
+            "type": "string",
+            "description": "The unit symbol, for example C, F, km/h, or mi/h."
+          }
+        }
+      },
+      "SevereWeatherAlertsResult": {
+        "type": "object",
+        "description": "Active severe weather alerts from the responsible national meteorological agency.",
+        "properties": {
+          "results": {
+            "type": "array",
+            "description": "Active alerts for the requested point. An empty array means no alerts are in effect.",
+            "items": {
+              "type": "object",
+              "description": "A single severe weather alert.",
+              "properties": {
+                "countryCode": {
+                  "type": "string",
+                  "description": "ISO country code of the issuing agency."
+                },
+                "alertId": {
+                  "type": "integer",
+                  "description": "Provider identifier for the alert."
+                },
+                "description": {
+                  "type": "object",
+                  "description": "Localized alert naming.",
+                  "properties": {
+                    "localized": {
+                      "type": "string",
+                      "description": "The alert name in the local language."
+                    },
+                    "english": {
+                      "type": "string",
+                      "description": "The alert name in English."
+                    }
+                  }
+                },
+                "category": {
+                  "type": "string",
+                  "description": "The hazard category, for example Flood or Wind."
+                },
+                "priority": {
+                  "type": "integer",
+                  "description": "Relative importance, where lower numbers are more severe."
+                },
+                "class": {
+                  "type": "string",
+                  "description": "The provider specific alert class."
+                },
+                "level": {
+                  "type": "string",
+                  "description": "The alert level, for example Warning, Watch, or Advisory."
+                },
+                "source": {
+                  "type": "string",
+                  "description": "The issuing agency name."
+                },
+                "alertAreas": {
+                  "type": "array",
+                  "description": "The geographic areas the alert applies to and the time window for each.",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "NwsAlertResult": {
+        "type": "object",
+        "description": "United States National Weather Service alerts for a point, with explicit coverage reporting.",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "description": "The latitude that was queried."
+          },
+          "longitude": {
+            "type": "number",
+            "description": "The longitude that was queried."
+          },
+          "isWithinCoverage": {
+            "type": "boolean",
+            "description": "True when the coordinate falls inside the National Weather Service coverage area. When false, the alerts array is empty because no data exists rather than because conditions are calm, and the caller must say so instead of implying the location is clear."
+          },
+          "coverageNote": {
+            "type": "string",
+            "description": "An explanation of the coverage result, present when the coordinate is outside coverage."
+          },
+          "alertCount": {
+            "type": "integer",
+            "description": "The number of active alerts returned."
+          },
+          "maxSeverity": {
+            "type": "string",
+            "description": "The highest severity across all returned alerts, one of Extreme, Severe, Moderate, Minor, Unknown, or None."
+          },
+          "hasEvacuationOrder": {
+            "type": "boolean",
+            "description": "True when at least one alert directs people to evacuate. Treat this as the highest priority signal in any summary."
+          },
+          "alerts": {
+            "type": "array",
+            "description": "The active alerts, ordered from most to least severe.",
+            "items": {
+              "$ref": "#/components/schemas/NwsAlert"
+            }
+          }
+        }
+      },
+      "NwsAlert": {
+        "type": "object",
+        "description": "A single National Weather Service alert.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The unique alert identifier."
+          },
+          "event": {
+            "type": "string",
+            "description": "The event name, for example Tornado Warning or Flash Flood Watch."
+          },
+          "severity": {
+            "type": "string",
+            "description": "Severity, one of Extreme, Severe, Moderate, Minor, or Unknown."
+          },
+          "certainty": {
+            "type": "string",
+            "description": "Confidence that the event will occur, for example Observed or Likely."
+          },
+          "urgency": {
+            "type": "string",
+            "description": "How soon action is required, for example Immediate or Expected."
+          },
+          "headline": {
+            "type": "string",
+            "description": "A one line summary of the alert."
+          },
+          "description": {
+            "type": "string",
+            "description": "The full narrative describing the hazard."
+          },
+          "instruction": {
+            "type": "string",
+            "description": "Protective actions the public should take."
+          },
+          "response": {
+            "type": "string",
+            "description": "The recommended response type, for example Evacuate, Shelter, or Avoid."
+          },
+          "areaDescription": {
+            "type": "string",
+            "description": "The counties or zones covered by the alert."
+          },
+          "onset": {
+            "type": "string",
+            "description": "When the hazard begins, in ISO 8601 format."
+          },
+          "expires": {
+            "type": "string",
+            "description": "When the alert message expires, in ISO 8601 format."
+          },
+          "ends": {
+            "type": "string",
+            "description": "When the hazard is expected to end, in ISO 8601 format."
+          }
+        }
+      }
+    }
+  }
+}

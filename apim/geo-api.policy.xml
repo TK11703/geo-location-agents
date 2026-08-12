@@ -1,0 +1,63 @@
+<!--
+  API-level policy for the ERDC Agents geo API.
+  Chain: Foundry agent (system-assigned MI) -> APIM (token validated here) -> function app.
+
+  Values come from APIM named values so this file carries no secrets or tenant-specific IDs:
+    entra-tenant-id    Entra tenant GUID
+    geo-api-audience   App ID URI of the app registration representing this API
+    foundry-mi-oid     Object ID of the Foundry account's system-assigned MI service principal
+    function-host-key  (secret) function host key used to authenticate to the backend
+
+  Backend URL comes from the API's serviceUrl, set at import time.
+-->
+<policies>
+  <inbound>
+    <base />
+
+    <validate-jwt header-name="Authorization"
+                  failed-validation-httpcode="401"
+                  failed-validation-error-message="Unauthorized. A valid Entra token is required."
+                  require-expiration-time="true"
+                  require-signed-tokens="true">
+      <openid-config url="https://login.microsoftonline.com/{{entra-tenant-id}}/v2.0/.well-known/openid-configuration" />
+      <audiences>
+        <audience>{{geo-api-audience}}</audience>
+      </audiences>
+      <issuers>
+        <!-- Managed identity tokens are issued as v1, hence sts.windows.net. -->
+        <issuer>https://sts.windows.net/{{entra-tenant-id}}/</issuer>
+        <issuer>https://login.microsoftonline.com/{{entra-tenant-id}}/v2.0</issuer>
+      </issuers>
+      <required-claims>
+        <!-- Without this, any principal in the tenant that can get a token for this audience passes. -->
+        <claim name="oid" match="any">
+          <value>{{foundry-mi-oid}}</value>
+        </claim>
+      </required-claims>
+    </validate-jwt>
+
+    <!-- Specialists fan out in parallel and every call downstream is a metered Maps transaction. -->
+    <rate-limit-by-key calls="120"
+                       renewal-period="60"
+                       counter-key='@(context.Request.Headers.GetValueOrDefault("Authorization","").AsJwt()?.Subject)' />
+
+    <set-header name="x-functions-key" exists-action="override">
+      <value>{{function-host-key}}</value>
+    </set-header>
+
+    <!-- The inbound token is scoped to APIM, not the backend. Do not forward it. -->
+    <set-header name="Authorization" exists-action="delete" />
+  </inbound>
+
+  <backend>
+    <base />
+  </backend>
+
+  <outbound>
+    <base />
+  </outbound>
+
+  <on-error>
+    <base />
+  </on-error>
+</policies>

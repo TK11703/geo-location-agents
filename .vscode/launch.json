@@ -1,0 +1,19 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run Functions Host",
+            "type": "coreclr",
+            "request": "launch",
+            "program": "C:\\Program Files\\Microsoft\\Azure Functions Core Tools\\func.exe",
+            "args": [
+                "host",
+                "start"
+            ],
+            "cwd": "${workspaceFolder}/src/ERDC.Agents/bin/Debug/net10.0",
+            "preLaunchTask": "build (functions)",
+            "console": "integratedTerminal",
+            "stopAtEntry": false
+        }
+    ]
+}

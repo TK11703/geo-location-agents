@@ -1,0 +1,205 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Location Specialist Data Feed",
+    "description": "Describes what exists at a known coordinate and produces map imagery for it. Every operation requires an explicit latitude and longitude. This service converts coordinates into a place description; it cannot convert a place name into coordinates.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://holonet-apim-databank-8108.azure-api.net/geo",
+      "description": "APIM gateway base URL. APIM validates the Entra token, then forwards to the function app backend."
+    }
+  ],
+  "paths": {
+    "/geocode/reverse": {
+      "get": {
+        "operationId": "reverseGeocodePoint",
+        "summary": "Get the street address for a coordinate",
+        "description": "Converts a latitude and longitude into the nearest known street address, along with the locality, postal code, and country. Use this to tell the user what place a coordinate refers to. This works in one direction only: it turns coordinates into an address and cannot turn an address or city name into coordinates.",
+        "parameters": [
+          {
+            "name": "latitude",
+            "in": "query",
+            "required": true,
+            "description": "Latitude of the point to describe, in decimal degrees between -90 and 90.",
+            "schema": { "type": "number", "format": "double", "minimum": -90, "maximum": 90 }
+          },
+          {
+            "name": "longitude",
+            "in": "query",
+            "required": true,
+            "description": "Longitude of the point to describe, in decimal degrees between -180 and 180.",
+            "schema": { "type": "number", "format": "double", "minimum": -180, "maximum": 180 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The lookup completed. Check hasAddressMatch before quoting an address.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReverseGeocodeResult" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/InvalidRequest" },
+          "502": { "$ref": "#/components/responses/UpstreamFailure" },
+          "503": { "$ref": "#/components/responses/NotConfigured" }
+        }
+      }
+    },
+    "/map": {
+      "get": {
+        "operationId": "getMapImageUrl",
+        "summary": "Render a map image of a coordinate and return a temporary link to it",
+        "description": "Renders a static map centered on the given coordinate and returns a temporary link to the resulting picture. Use this when the user asks to see or be shown a location. Give the returned imageUrl to the user as a link; the picture itself cannot be read or described here, so do not claim to know what it depicts beyond the location and map style that were requested. The link stops working after the time given in expiresOn.",
+        "parameters": [
+          {
+            "name": "latitude",
+            "in": "query",
+            "required": true,
+            "description": "Latitude of the point to center the map on, in decimal degrees between -90 and 90.",
+            "schema": { "type": "number", "format": "double", "minimum": -90, "maximum": 90 }
+          },
+          {
+            "name": "longitude",
+            "in": "query",
+            "required": true,
+            "description": "Longitude of the point to center the map on, in decimal degrees between -180 and 180.",
+            "schema": { "type": "number", "format": "double", "minimum": -180, "maximum": 180 }
+          },
+          {
+            "name": "output",
+            "in": "query",
+            "required": true,
+            "description": "Response format. Always send url, which returns a link to the picture. The other format returns raw image bytes that cannot be handled here.",
+            "schema": { "type": "string", "enum": ["url"], "default": "url" }
+          },
+          {
+            "name": "mapType",
+            "in": "query",
+            "required": false,
+            "description": "Visual style of the map. Use road for a standard labeled street map, satellite for aerial imagery, or dark for a dark themed street map. Defaults to road.",
+            "schema": { "type": "string", "enum": ["road", "dark", "satellite"], "default": "road" }
+          },
+          {
+            "name": "radiusMeters",
+            "in": "query",
+            "required": false,
+            "description": "How much ground the map should cover, expressed as a radius in meters from the center point, between 25 and 500000. Prefer this over zoom because it is expressed in real world distance. Do not send both radiusMeters and zoom.",
+            "schema": { "type": "integer", "minimum": 25, "maximum": 500000 }
+          },
+          {
+            "name": "zoom",
+            "in": "query",
+            "required": false,
+            "description": "Map zoom level from 0 for the whole world to 20 for individual buildings, with a maximum of 19 for satellite imagery. Do not send both zoom and radiusMeters. Defaults to 12.",
+            "schema": { "type": "integer", "minimum": 0, "maximum": 20, "default": 12 }
+          },
+          {
+            "name": "width",
+            "in": "query",
+            "required": false,
+            "description": "Width of the rendered image in pixels, between 80 and 2000. Defaults to 512.",
+            "schema": { "type": "integer", "minimum": 80, "maximum": 2000, "default": 512 }
+          },
+          {
+            "name": "height",
+            "in": "query",
+            "required": false,
+            "description": "Height of the rendered image in pixels, between 80 and 1500. Defaults to 512.",
+            "schema": { "type": "integer", "minimum": 80, "maximum": 1500, "default": 512 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The map image was rendered and stored, and a temporary link is returned.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MapImageUrlResult" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/InvalidRequest" },
+          "404": {
+            "description": "The requested location could not be found.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+            }
+          },
+          "502": { "$ref": "#/components/responses/UpstreamFailure" },
+          "503": { "$ref": "#/components/responses/NotConfigured" }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "InvalidRequest": {
+        "description": "The request parameters were missing or invalid. The detail field explains what to correct.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+        }
+      },
+      "UpstreamFailure": {
+        "description": "The upstream mapping provider could not complete the request.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+        }
+      },
+      "NotConfigured": {
+        "description": "The mapping service is not configured on the server and cannot answer requests.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+        }
+      }
+    },
+    "schemas": {
+      "ProblemDetails": {
+        "type": "object",
+        "description": "A machine readable description of a failed request.",
+        "properties": {
+          "status": { "type": "integer", "description": "The HTTP status code." },
+          "title": { "type": "string", "description": "A short summary of the problem type." },
+          "detail": { "type": "string", "description": "An explanation of what went wrong and how to correct it." }
+        }
+      },
+      "ReverseGeocodeResult": {
+        "type": "object",
+        "description": "The place description for a coordinate.",
+        "properties": {
+          "latitude": { "type": "number", "description": "The latitude that was queried." },
+          "longitude": { "type": "number", "description": "The longitude that was queried." },
+          "hasAddressMatch": {
+            "type": "boolean",
+            "description": "True when an address was found. When false, the coordinate is in an unaddressed area such as open water, wilderness, or farmland, and the address fields are empty. Say so plainly rather than guessing a nearby address."
+          },
+          "formattedAddress": { "type": "string", "description": "The complete address as a single display ready line." },
+          "addressLine": { "type": "string", "description": "The street number and street name portion of the address." },
+          "locality": { "type": "string", "description": "The city, town, or neighborhood name." },
+          "postalCode": { "type": "string", "description": "The postal or ZIP code." },
+          "countryCode": { "type": "string", "description": "The ISO country code." },
+          "resultType": { "type": "string", "description": "What kind of feature was matched, for example Point Address, Street, or Geography." },
+          "confidence": { "type": "string", "description": "How confident the provider is in the match, one of High, Medium, or Low." },
+          "isLikelyPrivateRoad": { "type": "boolean", "description": "True when the matched road appears to be private, which matters when judging whether a location is publicly reachable." }
+        }
+      },
+      "MapImageUrlResult": {
+        "type": "object",
+        "description": "A temporary link to a rendered map image.",
+        "properties": {
+          "imageUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "A time limited link to the rendered map picture. Present this to the user as a clickable link. The picture contents cannot be inspected here."
+          },
+          "expiresOn": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The moment the link stops working, in ISO 8601 format. Mention that the link is temporary when sharing it."
+          }
+        }
+      }
+    }
+  }
+}

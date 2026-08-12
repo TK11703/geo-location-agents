@@ -1,0 +1,24 @@
+**/bin/
+**/obj/
+.vs/
+
+TestResults/
+*.user
+*.suo
+local.settings.json
+
+# Azurite local emulator state
+__blobstorage__/
+__queuestorage__/
+__azurite_db_*.json
+.azurite/
+
+# Environment-specific values; azd owns these
+.env
+!*.env.example
+
+# Local agent host conversation state
+.checkpoints/
+
+# Scratch output from manual endpoint testing
+seattle.png

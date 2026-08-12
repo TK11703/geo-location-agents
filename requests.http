@@ -1,0 +1,109 @@
+@host = http://localhost:7071
+
+# Endpoints are AuthorizationLevel.Function. The local Core Tools host does not enforce
+# keys, so these requests work as-is against localhost.
+#
+# Deployed, callers go through APIM instead of hitting the function app directly. APIM
+# validates the Entra token and injects x-functions-key for the backend. To test through
+# the gateway, point @host at https://<apim>.azure-api.net/geo and send @token:
+#   az account get-access-token --resource api://<apim-client-id> --query accessToken -o tsv
+@token = paste-a-bearer-token-here-when-testing-through-apim
+
+GET {{host}}/api/map?city=Seattle&width=640&height=480&zoom=10&mapType=satellite
+
+###
+
+GET {{host}}/api/map?latitude=47.6062&longitude=-122.3321
+
+###
+
+GET {{host}}/api/map?latitude=47.6062&longitude=-122.3321&mapType=satellite&radiusMeters=250
+
+### Map image returned as a temporary SAS link instead of PNG bytes
+
+GET {{host}}/api/map?latitude=47.6062&longitude=-122.3321&radiusMeters=500&output=url
+
+###
+
+POST {{host}}/api/map
+Content-Type: application/json
+
+{
+  "city": "London",
+  "width": 800,
+  "height": 600,
+  "zoom": 11,
+  "mapType": "dark"
+}
+
+###
+
+POST {{host}}/api/map
+Content-Type: application/json
+
+{
+  "latitude": 35.6762,
+  "longitude": 139.6503
+}
+
+###
+
+GET {{host}}/api/route?originLatitude=47.6062&originLongitude=-122.3321&destinationLatitude=47.4502&destinationLongitude=-122.3088&travelMode=truck&zoom=12
+
+###
+
+POST {{host}}/api/route
+Content-Type: application/json
+
+{
+  "originLatitude": 47.6062,
+  "originLongitude": -122.3321,
+  "destinationLatitude": 47.4502,
+  "destinationLongitude": -122.3088,
+  "travelMode": "truck",
+  "zoom": 12,
+  "vehicleSpec": {
+    "axleCount": 5,
+    "isVehicleCommercial": true
+  }
+}
+
+### Partial truck profile using GET
+
+GET {{host}}/api/route?originLatitude=47.6062&originLongitude=-122.3321&destinationLatitude=47.4502&destinationLongitude=-122.3088&travelMode=truck&axleCount=5&isVehicleCommercial=true
+
+### Truck route details as GeoJSON
+
+GET {{host}}/api/route?originLatitude=47.6062&originLongitude=-122.3321&destinationLatitude=47.4502&destinationLongitude=-122.3088&travelMode=truck&axleCount=5&isVehicleCommercial=true&output=details
+
+### Route map returned as a temporary SAS link instead of PNG bytes
+
+GET {{host}}/api/route?originLatitude=47.6062&originLongitude=-122.3321&destinationLatitude=47.4502&destinationLongitude=-122.3088&output=url
+
+### Reverse geocode a point
+
+GET {{host}}/api/geocode/reverse?latitude=47.6062&longitude=-122.3321
+
+### Traffic incidents near a point
+
+GET {{host}}/api/traffic/incidents?latitude=47.6062&longitude=-122.3321&radiusMeters=2000
+
+### Current weather conditions at a point
+
+GET {{host}}/api/weather/conditions?latitude=47.6062&longitude=-122.3321
+
+### Azure Maps severe weather alerts at a point
+
+GET {{host}}/api/weather/alerts?latitude=47.6062&longitude=-122.3321
+
+### National Weather Service active alerts at a point
+
+GET {{host}}/api/alerts/nws?latitude=47.6062&longitude=-122.3321
+
+### Terrain elevation and slope around a point
+
+GET {{host}}/api/elevation?latitude=47.6062&longitude=-122.3321&radiusMeters=100
+
+### Outside NWS coverage returns a clear no-coverage response
+
+GET {{host}}/api/alerts/nws?latitude=51.5072&longitude=-0.1276

@@ -1,0 +1,40 @@
+{
+  "type": "json_schema",
+  "name": "specialist_report",
+  "strict": true,
+  "schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["status", "summary", "findings", "caveats"],
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": ["ok", "needs_input", "no_data", "error"],
+        "description": "ok when live data answered the question. needs_input when required coordinates were missing so no tool was called. no_data when a tool ran but the provider has no coverage or returned nothing. error when a tool failed."
+      },
+      "summary": {
+        "type": "string",
+        "description": "A few sentences answering the question in plain language, leading with the most important fact."
+      },
+      "findings": {
+        "type": "array",
+        "description": "The individual data points behind the summary. Empty when status is needs_input.",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["label", "value", "unit"],
+          "properties": {
+            "label": { "type": "string", "description": "What was measured or observed, for example Temperature or Max slope." },
+            "value": { "type": "string", "description": "The value as text, exactly as the tool reported it." },
+            "unit": { "type": ["string", "null"], "description": "The unit the tool reported, or null when the value is unitless." }
+          }
+        }
+      },
+      "caveats": {
+        "type": "array",
+        "description": "Limits on how far this report can be trusted. Must be non-empty when status is no_data or error, or when live data came back but is partial, approximate, or expiring.",
+        "items": { "type": "string" }
+      }
+    }
+  }
+}

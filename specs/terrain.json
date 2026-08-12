@@ -1,0 +1,127 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Terrain Specialist Data Feed",
+    "description": "Ground elevation and local terrain relief for a specific point on Earth, sampled from the United States Geological Survey National Map. Requires an explicit latitude and longitude; it cannot look up coordinates from a place name.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://holonet-apim-databank-8108.azure-api.net/geo",
+      "description": "APIM gateway base URL. APIM validates the Entra token, then forwards to the function app backend."
+    }
+  ],
+  "paths": {
+    "/elevation": {
+      "get": {
+        "operationId": "getElevationProfile",
+        "summary": "Get ground elevation and terrain relief around a coordinate",
+        "description": "Returns the ground elevation at the given coordinate plus a ring of surrounding sample points, and summarizes the local terrain as minimum, maximum, and range of elevation along with the steepest slope found. Use this to answer questions about how high, how hilly, how steep, or how flat a location is. Elevation is height of the ground surface above sea level and is not the height of buildings or the altitude of aircraft.",
+        "parameters": [
+          {
+            "name": "latitude",
+            "in": "query",
+            "required": true,
+            "description": "Latitude of the center point in decimal degrees, between -90 and 90.",
+            "schema": { "type": "number", "format": "double", "minimum": -90, "maximum": 90 }
+          },
+          {
+            "name": "longitude",
+            "in": "query",
+            "required": true,
+            "description": "Longitude of the center point in decimal degrees, between -180 and 180.",
+            "schema": { "type": "number", "format": "double", "minimum": -180, "maximum": 180 }
+          },
+          {
+            "name": "radiusMeters",
+            "in": "query",
+            "required": false,
+            "description": "Distance in meters from the center point at which the surrounding samples are taken, between 10 and 5000. Use a small radius such as 100 to describe the immediate site and a large radius such as 2000 to describe the surrounding landscape. Defaults to 100.",
+            "schema": { "type": "integer", "minimum": 10, "maximum": 5000, "default": 100 }
+          },
+          {
+            "name": "sampleCount",
+            "in": "query",
+            "required": false,
+            "description": "How many points to sample evenly around the ring, between 4 and 16. More samples give a more reliable slope estimate but return more data. Defaults to 8.",
+            "schema": { "type": "integer", "minimum": 4, "maximum": 16, "default": 8 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The elevation profile was computed successfully.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ElevationResult" }
+              }
+            }
+          },
+          "400": {
+            "description": "The request parameters were missing or invalid. The detail field explains what to correct.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+            }
+          },
+          "502": {
+            "description": "The upstream elevation provider could not complete the request.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ProblemDetails": {
+        "type": "object",
+        "description": "A machine readable description of a failed request.",
+        "properties": {
+          "status": { "type": "integer", "description": "The HTTP status code." },
+          "title": { "type": "string", "description": "A short summary of the problem type." },
+          "detail": { "type": "string", "description": "An explanation of what went wrong and how to correct it." }
+        }
+      },
+      "ElevationResult": {
+        "type": "object",
+        "description": "Ground elevation at a point and a summary of the terrain relief around it.",
+        "properties": {
+          "latitude": { "type": "number", "description": "The latitude of the center point that was queried." },
+          "longitude": { "type": "number", "description": "The longitude of the center point that was queried." },
+          "radiusMeters": { "type": "integer", "description": "The sampling radius in meters that was used." },
+          "centerElevationMeters": {
+            "type": ["number", "null"],
+            "description": "Ground elevation at the center point in meters above sea level. Null when the provider has no data for that point, which commonly happens outside the United States."
+          },
+          "minElevationMeters": { "type": ["number", "null"], "description": "The lowest elevation in meters among the center point and all ring samples." },
+          "maxElevationMeters": { "type": ["number", "null"], "description": "The highest elevation in meters among the center point and all ring samples." },
+          "elevationRangeMeters": {
+            "type": ["number", "null"],
+            "description": "The difference in meters between the highest and lowest sampled elevation. A small value indicates flat terrain and a large value indicates rugged terrain."
+          },
+          "maxSlopePercent": {
+            "type": ["number", "null"],
+            "description": "The steepest slope found between the center point and any ring sample, as a percentage where 100 means a one meter rise over one meter of horizontal distance. Values below about 5 are near level, and values above about 30 are steep enough to impede vehicles."
+          },
+          "samples": {
+            "type": "array",
+            "description": "The individual sample points taken around the ring. Summarize these rather than listing every one.",
+            "items": { "$ref": "#/components/schemas/ElevationSample" }
+          }
+        }
+      },
+      "ElevationSample": {
+        "type": "object",
+        "description": "A single elevation reading taken around the center point.",
+        "properties": {
+          "latitude": { "type": "number", "description": "The latitude of this sample." },
+          "longitude": { "type": "number", "description": "The longitude of this sample." },
+          "bearingDegrees": { "type": "number", "description": "The compass bearing from the center point to this sample, in degrees clockwise from true north." },
+          "distanceMeters": { "type": "number", "description": "The distance from the center point to this sample, in meters." },
+          "elevationMeters": { "type": ["number", "null"], "description": "Ground elevation at this sample in meters above sea level, or null when the provider has no data." }
+        }
+      }
+    }
+  }
+}

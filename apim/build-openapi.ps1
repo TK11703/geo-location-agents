@@ -2,11 +2,12 @@
 # Foundry consumes specs/*.json individually; APIM needs a single API at one path.
 param(
     [string]$SpecsDir = (Join-Path $PSScriptRoot '..\specs'),
-    [string]$OutFile = (Join-Path $PSScriptRoot 'geo-api.openapi.json'),
-    [string]$ServerUrl = 'https://holonet-apim-databank-8108.azure-api.net/geo'
+    [string]$OutFile = (Join-Path $PSScriptRoot 'geo-api.openapi.json')
 )
 
 $ErrorActionPreference = 'Stop'
+
+$config = & (Join-Path $PSScriptRoot '..\scripts\Get-AzdConfig.ps1') -Require GEO_API_BASE_URL
 
 # APIM's importer rejects 3.1 union types, so rewrite type:[X,"null"] as type:X + nullable:true.
 function Convert-NullableType {
@@ -37,7 +38,7 @@ $merged = [ordered]@{
         version     = '1.0.0'
         description = 'Weather, terrain, mobility, and location endpoints consumed by Foundry specialist agents.'
     }
-    servers = @(@{ url = $ServerUrl })
+    servers = @(@{ url = $config.GEO_API_BASE_URL })
     paths   = [ordered]@{}
     components = [ordered]@{}
 }

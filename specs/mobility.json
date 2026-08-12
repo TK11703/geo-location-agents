@@ -5,12 +5,6 @@
     "description": "Road network conditions and vehicle routing between two known coordinates. Every operation requires explicit latitude and longitude values; it cannot look up coordinates from a place name.",
     "version": "1.0.0"
   },
-  "servers": [
-    {
-      "url": "https://holonet-apim-databank-8108.azure-api.net/geo",
-      "description": "APIM gateway base URL. APIM validates the Entra token, then forwards to the function app backend."
-    }
-  ],
   "paths": {
     "/traffic/incidents": {
       "get": {

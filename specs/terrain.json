@@ -5,12 +5,6 @@
     "description": "Ground elevation and local terrain relief for a specific point on Earth, sampled from the United States Geological Survey National Map. Requires an explicit latitude and longitude; it cannot look up coordinates from a place name.",
     "version": "1.0.0"
   },
-  "servers": [
-    {
-      "url": "https://holonet-apim-databank-8108.azure-api.net/geo",
-      "description": "APIM gateway base URL. APIM validates the Entra token, then forwards to the function app backend."
-    }
-  ],
   "paths": {
     "/elevation": {
       "get": {

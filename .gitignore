@@ -13,9 +13,11 @@ __queuestorage__/
 __azurite_db_*.json
 .azurite/
 
-# Environment-specific values; azd owns these
+# Environment-specific values; azd owns these. .env.example is the tracked template.
+.azure/
 .env
 !*.env.example
+!.env.example
 
 # Local agent host conversation state
 .checkpoints/

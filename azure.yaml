@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+# Owns the backend function app and the APIM geo API. The orchestrator agent is a separate azd
+# project under orchestrator/, because that one uses the microsoft.foundry infrastructure provider
+# and so cannot also emit the custom Bicep this side needs.
+name: erdc-agents
+metadata:
+  template: erdc-agents@1.0.0

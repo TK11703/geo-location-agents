@@ -5,12 +5,6 @@
     "description": "Describes what exists at a known coordinate and produces map imagery for it. Every operation requires an explicit latitude and longitude. This service converts coordinates into a place description; it cannot convert a place name into coordinates.",
     "version": "1.0.0"
   },
-  "servers": [
-    {
-      "url": "https://holonet-apim-databank-8108.azure-api.net/geo",
-      "description": "APIM gateway base URL. APIM validates the Entra token, then forwards to the function app backend."
-    }
-  ],
   "paths": {
     "/geocode/reverse": {
       "get": {

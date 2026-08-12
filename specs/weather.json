@@ -5,12 +5,6 @@
     "description": "Current weather conditions and active severe-weather alerts for a specific point on Earth. Every operation requires an explicit latitude and longitude. This service cannot look up coordinates from a place name, so the caller must already know the coordinates.",
     "version": "1.0.0"
   },
-  "servers": [
-    {
-      "url": "https://holonet-apim-databank-8108.azure-api.net/geo",
-      "description": "APIM gateway base URL. APIM validates the Entra token, then forwards to the function app backend."
-    }
-  ],
   "paths": {
     "/weather/conditions": {
       "get": {

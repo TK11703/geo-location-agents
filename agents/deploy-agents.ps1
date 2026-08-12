@@ -10,7 +10,10 @@
       agents/report-schema.json    -> shared structured response format
 
     Auth is managed identity: the Foundry account's system-assigned MI requests a token for
-    $Audience, APIM validates it and injects the function host key. No secrets live here.
+    GEO_API_AUDIENCE, APIM validates it and injects the function host key. No secrets live here.
+
+    Target project, model, audience, and gateway URL all come from the active azd environment, so
+    this script is identical across environments.
 
 .EXAMPLE
     ./agents/deploy-agents.ps1
@@ -18,14 +21,14 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$ProjectEndpoint = 'https://aaronchorpenning-0417-resource.services.ai.azure.com/api/projects/aaronchorpenning-0417',
-    [string]$Model = 'gpt-4-1-mini',
-    [string]$Audience = 'api://af9bbd36-71a0-4e7e-a5af-80f8a1200f6e',
     [string]$ApiVersion = 'v1',
     [string[]]$Only
 )
 
 $ErrorActionPreference = 'Stop'
+
+$config = & (Join-Path $PSScriptRoot '..\scripts\Get-AzdConfig.ps1') `
+    -Require FOUNDRY_PROJECT_ENDPOINT, SPECIALIST_MODEL, GEO_API_AUDIENCE, GEO_API_BASE_URL
 
 $agents = @(
     @{
@@ -69,6 +72,10 @@ foreach ($a in $agents) {
     $specPath = Join-Path $repoRoot "specs/$($a.Spec)"
     $spec = Get-Content $specPath -Raw | ConvertFrom-Json
 
+    # The specs carry no server URL, so the same file can target any environment.
+    $spec | Add-Member -NotePropertyName servers `
+        -NotePropertyValue @(@{ url = $config.GEO_API_BASE_URL }) -Force
+
     # Foundry rejects operationIds containing digits, and the failure surfaces only at invoke time.
     foreach ($path in $spec.paths.PSObject.Properties) {
         foreach ($op in $path.Value.PSObject.Properties) {
@@ -81,7 +88,7 @@ foreach ($a in $agents) {
 
     $definition = @{
         kind         = 'prompt'
-        model        = $Model
+        model        = $config.SPECIALIST_MODEL
         instructions = "$instructions`n`n$contract"
         temperature  = 0.2
         text         = @{ format = $textFormat }
@@ -94,7 +101,7 @@ foreach ($a in $agents) {
                     spec        = $spec
                     auth        = @{
                         type            = 'managed_identity'
-                        security_scheme = @{ audience = $Audience }
+                        security_scheme = @{ audience = $config.GEO_API_AUDIENCE }
                     }
                 }
             }
@@ -102,7 +109,7 @@ foreach ($a in $agents) {
     }
 
     $body = @{ definition = $definition } | ConvertTo-Json -Depth 100 -Compress
-    $url = "$ProjectEndpoint/agents/$($a.Name)/versions?api-version=$ApiVersion"
+    $url = "$($config.FOUNDRY_PROJECT_ENDPOINT)/agents/$($a.Name)/versions?api-version=$ApiVersion"
     $result = Invoke-RestMethod -Method Post -Uri $url -Headers $headers -ContentType 'application/json' -Body $body
 
     "{0,-22} -> version {1}" -f $a.Name, $result.version

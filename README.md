@@ -1,13 +1,122 @@
-# Azure Maps Functions
+# ERDC Agents
 
-A .NET 10 Azure Functions v4 isolated-worker application that returns static PNG maps,
-calculated routes, and point-level site data for a latitude and longitude.
+A geospatial question answering system. A user asks about a point on the ground, four specialist
+agents each answer for the domain they own, and an orchestrator merges those answers into one report
+that states what is known, what is missing, and where it came from.
 
-Each endpoint is independent and does exactly one thing: it retrieves data from a single
-upstream source and returns it. Nothing in this application decides whether a site is
-reachable or serviceable. That determination is left to the caller, which is expected to
-be a model or agent that selects the endpoints it needs and reasons over the combined
-results.
+The .NET 10 Azure Functions application in `src/ERDC.Agents` is the data layer underneath all of
+that. Each endpoint is independent and does exactly one thing: it retrieves data from a single
+upstream source and returns it. Nothing in this application decides whether a site is reachable or
+serviceable. Every judgment of that kind is made above it, by the agents.
+
+## How it works
+
+Four specialist agents sit between the orchestrator and the data. Each one owns a domain, holds only
+the tools for that domain, and returns a fixed JSON report rather than prose. The orchestrator has no
+data of its own and no tools other than the specialists themselves.
+
+```mermaid
+flowchart LR
+    User(["User question<br/>with coordinates"])
+
+    subgraph Foundry["Microsoft Foundry"]
+        Orch["geo-orchestrator<br/>hosted agent, gpt-4.1<br/>Agent Framework container"]
+
+        subgraph Spec["Specialists: prompt agents, gpt-4-1-mini, strict JSON"]
+            W["weather-specialist"]
+            T["terrain-specialist"]
+            M["mobility-specialist"]
+            L["location-specialist"]
+        end
+    end
+
+    subgraph Gate["Data plane"]
+        APIM["API Management<br/>validate-jwt on audience and oid<br/>injects x-functions-key"]
+        Fn["Function app<br/>Flex Consumption<br/>8 HTTP endpoints"]
+    end
+
+    subgraph Up["Upstream providers"]
+        Maps["Azure Maps"]
+        NWS["US National Weather Service"]
+        USGS["USGS elevation"]
+    end
+
+    User --> Orch
+    Orch -->|"each specialist is a tool"| W & T & M & L
+    W & T & M & L -->|"OpenAPI tool, managed identity token"| APIM
+    APIM --> Fn
+    Fn --> Maps & NWS & USGS
+    Orch -->|"merged answer"| User
+```
+
+The specialists never hold a key. The Foundry account's system-assigned managed identity requests a
+token for the gateway's audience, API Management validates it and pins the caller's object id, and
+only then adds the function host key. The key exists on one hop that the agents cannot see.
+
+### What one question does
+
+The interesting part is the last two steps. A specialist records the tools that actually answered in
+the `sources` field of its report, and the host reads that off the tool results and appends the
+resulting limitation itself. Asking the model to state it produced it in four runs out of five, which
+is not a rate to put behind a heat warning.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant H as SourceReportingAgent (host code)
+    participant O as geo-orchestrator (model)
+    participant W as weather-specialist
+    participant A as APIM and function app
+
+    U->>H: coordinates and a question
+    H->>O: pass through
+    O->>W: the question as asked, not narrowed
+    W->>A: getNwsAlerts
+    A-->>W: isWithinCoverage false
+    W->>A: getSevereWeatherAlerts
+    A-->>W: alerts
+    W-->>O: JSON report, sources lists both tools
+    O-->>H: merged answer plus the tool results
+    H->>H: read sources, decide what is owed
+    H-->>U: answer with Source notes appended
+```
+
+A London coordinate sits outside both USGS elevation coverage and the National Weather Service, so a
+correct answer reports the elevation gap and attributes the alert to the worldwide feed. A Seattle
+coordinate must produce neither. The rule lives in
+[SourceNotices.All](orchestrator/src/geo-orchestrator/SourceNotices.cs) and is unit tested; the model
+is told not to describe where data came from, so the statement has one author and one wording.
+
+### How it gets deployed
+
+Two azd projects, because one project cannot use both providers. The specialists are published by a
+postdeploy hook so they are never pointed at a gateway that has no code behind it yet.
+
+```mermaid
+flowchart TB
+    subgraph Repo["Repository"]
+        Infra["infra/*.bicep"]
+        Api["src/ERDC.Agents"]
+        Defs["agents/*.md<br/>report-schema.json<br/>specs/*.json"]
+        OrchSrc["orchestrator/src/geo-orchestrator"]
+    end
+
+    Root["azd up at the root<br/>bicep provider"]
+    Hook["postdeploy hook<br/>agents/deploy-agents.ps1"]
+    Sub["azd deploy geo-orchestrator<br/>microsoft.foundry provider<br/>never azd provision"]
+
+    Infra --> Root
+    Api --> Root
+    Root --> Hook
+    Defs --> Hook
+    Hook --> Agents["4 specialist agents<br/>Foundry returns the existing<br/>version when nothing changed"]
+    OrchSrc --> Sub --> Hosted["geo-orchestrator hosted agent"]
+```
+
+The API Management instance, the Foundry account and project, the model deployments, and the Entra
+app registration are all shared with other work and are deliberately outside the infrastructure this
+repo provisions.
 
 ## API
 
@@ -294,8 +403,8 @@ Invoke-WebRequest `
   -OutFile "seattle.png"
 ```
 
-All endpoints enforce function-key authorization when deployed, except `/api/route`,
-which is anonymous.
+All endpoints enforce function-key authorization when deployed. In Azure the key is held by API
+Management and added on the last hop, so the agents that call these endpoints never see it.
 
 ## Build And Test
 

@@ -71,8 +71,12 @@ London is the useful test case: it is outside both the USGS elevation coverage a
 National Weather Service, so a correct answer reports the elevation gap and attributes the weather
 alert to the worldwide feed.
 
-The elevation caveat is reliable. The alert-source caveat is not: across repeated runs the weather
-specialist emitted it roughly three times in four, dropping it in the rest even though its
-instructions require it whenever an alert came from the worldwide feed. Provenance therefore rests
-on the model choosing to mention it, which is worth moving into the tool response or the report
-schema rather than leaving to instruction alone.
+Attribution is not the model's job. The specialists record the tools that answered in the `sources`
+field of their report, and [SourceReporting.cs](src/geo-orchestrator/SourceReporting.cs) reads that
+off the tool results and appends the resulting limitation as a `Source notes` block. Asking the model
+to state it produced it in four runs out of five; deriving it in code produced it in eight out of
+eight, once each, and in none of the runs against a point the National Weather Service covers.
+
+The model is told not to describe where data came from, so the note has one author and one wording.
+Anything that changes which tool implies which limitation belongs in `SourceNotices.All`, alongside
+its tests.

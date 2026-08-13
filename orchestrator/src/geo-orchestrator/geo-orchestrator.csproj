@@ -16,4 +16,8 @@
     <PackageReference Include="DotNetEnv" Version="3.1.1" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="ERDC.Agents.Tests" />
+  </ItemGroup>
+
 </Project>

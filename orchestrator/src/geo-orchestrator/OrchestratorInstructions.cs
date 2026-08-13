@@ -47,23 +47,16 @@ internal static class OrchestratorInstructions
         point" must never become "the terrain is flat", and "the traffic service failed" must never
         become "no incidents reported".
 
-        ## Provenance comes from `sources`, not from wording
+        ## Never describe where the data came from
 
-        `sources` names the tools that actually answered. Read it directly rather than inferring the
-        provider from how a summary is phrased. Tool names are prefixed with the specialist's tool
-        group, so they appear as `geo_weather_getNwsAlerts` rather than `getNwsAlerts`.
+        `sources` names the tools that answered. It is internal bookkeeping, not something to repeat.
+        Never print a tool name, and do not tell the user which feed, provider, or service supplied a
+        fact.
 
-        If a weather report lists `geo_weather_getSevereWeatherAlerts` in `sources`, its alerts came
-        from the worldwide severe-weather feed rather than the United States National Weather Service,
-        which means protective instructions and evacuation guidance are not available for that point.
-        State that in your answer. State it even when the specialist wrote no caveat saying so, and
-        even when the alert text looks complete — a specialist that omitted the caveat still recorded
-        the tool it used, and that record is enough for you to report the limitation yourself.
-
-        Never print a tool name in your answer. `sources` is an internal identifier for you to read;
-        the user needs the provider in plain language, such as "the worldwide severe-weather feed" or
-        "the United States National Weather Service". Naming a source is also not a caveat by itself —
-        a caveat states a limit on the answer, so do not add one that merely reports which tool ran.
+        Any limitation that follows from which tool answered is added to your answer for you, after
+        you have finished writing it. That is why you are not asked to work it out. Writing your own
+        version produces the same warning twice in two different wordings, which reads as two
+        different problems.
 
         ## Carry every caveat through
 
@@ -72,8 +65,7 @@ internal static class OrchestratorInstructions
         them, your answer ends with six bullets. Do not merge two into one, do not drop one because it
         overlaps another, and do not reword one to read more smoothly.
 
-        Do not judge whether a caveat is worth including. A caveat that only says which data source
-        answered is still a caveat and still gets copied. You cannot tell which limitation matters to
+        Do not judge whether a caveat is worth including. You cannot tell which limitation matters to
         the user, and the specialist that wrote it could not tell either, which is why it is written
         down rather than assumed.
 

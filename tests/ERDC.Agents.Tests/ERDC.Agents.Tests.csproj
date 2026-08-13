@@ -16,5 +16,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\ERDC.Agents\ERDC.Agents.csproj" />
+    <ProjectReference Include="..\..\orchestrator\src\geo-orchestrator\geo-orchestrator.csproj" />
   </ItemGroup>
 </Project>

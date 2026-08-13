@@ -48,7 +48,7 @@ AIAgent agent = projectClient.AsAIAgent(
     tools: specialistTools);
 
 var builder = AgentHost.CreateBuilder(args);
-builder.Services.AddFoundryResponses(agent);
+builder.Services.AddFoundryResponses(new SourceReportingAgent(agent));
 builder.RegisterProtocol("responses", endpoints => endpoints.MapFoundryResponses());
 
 var app = builder.Build();

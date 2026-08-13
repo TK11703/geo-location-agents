@@ -12,7 +12,7 @@
     "logAnalyticsWorkspaceId": { "value": "${LOG_ANALYTICS_WORKSPACE_ID}" },
     "deploymentContainerName": { "value": "${DEPLOYMENT_CONTAINER_NAME}" },
     "nwsUserAgent": { "value": "${NWS_USER_AGENT}" },
-    "azureMapsSubscriptionKey": { "value": "${AZURE_MAPS_SUBSCRIPTION_KEY}" },
+    "mapsAccountName": { "value": "${MAPS_ACCOUNT_NAME}" },
     "apimResourceGroup": { "value": "${APIM_RESOURCE_GROUP}" },
     "apimServiceName": { "value": "${APIM_SERVICE_NAME}" },
     "apimApiId": { "value": "${APIM_API_ID}" },

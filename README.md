@@ -380,7 +380,7 @@ compare a truck-legal path against an unrestricted one.
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 - [Azure Functions Core Tools v4](https://learn.microsoft.com/azure/azure-functions/functions-run-local)
 - [Azurite](https://learn.microsoft.com/azure/storage/common/storage-use-azurite) or another local Functions storage connection
-- An [Azure Maps account](https://learn.microsoft.com/azure/azure-maps/quick-demo-map-app#create-an-azure-maps-account) and subscription key
+- An [Azure Maps account](https://learn.microsoft.com/azure/azure-maps/quick-demo-map-app#create-an-azure-maps-account) and subscription key, for local development only. Deployments create their own account.
 
 ## Run Locally
 
@@ -419,7 +419,7 @@ The tests mock upstream HTTP responses and do not require credentials or network
 
 | Setting | Required | Default | Purpose |
 |---------|----------|---------|---------|
-| `AzureMaps__SubscriptionKey` | Yes | None | Server-side Azure Maps authentication key. |
+| `AzureMaps__SubscriptionKey` | Yes | None | Server-side Azure Maps authentication key. Set from the provisioned account when deployed; supply your own for local development. |
 | `AzureMaps__Endpoint` | No | `https://atlas.microsoft.com` | Azure Maps endpoint, configurable for sovereign clouds or tests. |
 | `Nws__UserAgent` | For `/api/alerts/nws` | None | Contact User-Agent required by the National Weather Service, in the form `AppName (contact@example.com)`. |
 | `Nws__Endpoint` | No | `https://api.weather.gov` | National Weather Service endpoint, configurable for tests. |
@@ -435,7 +435,7 @@ $env:Nws__UserAgent = "ERDC.Agents (<your-contact>)"
 dotnet run --project .\src\ERDC.Agents
 ```
 
-For a deployed Function App, add both `AzureMaps__SubscriptionKey` and `Nws__UserAgent` under **Settings > Environment variables** in the Azure portal and restart the app. Neither is carried over from `local.settings.json` or user secrets, so a deployment that omits them will serve `503` from the endpoints that depend on them even though the same endpoints work locally. A missing setting is logged by the function and returns `503 Service Unavailable` without exposing configuration details to the caller.
+For a deployed Function App, both settings are applied by the Bicep template. `AzureMaps__SubscriptionKey` is read from the Azure Maps account the template creates, so no Maps key is stored in configuration or in the azd environment, and `Nws__UserAgent` comes from `NWS_USER_AGENT` in the azd environment. Neither is carried over from `local.settings.json` or user secrets. A missing setting is logged by the function and returns `503 Service Unavailable` without exposing configuration details to the caller.
 
 All Azure Maps calls use the server-side subscription key, which never leaves the
 Function App. The National Weather Service and USGS endpoints are public and require no

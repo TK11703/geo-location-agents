@@ -20,9 +20,8 @@ param deploymentContainerName string
 
 param nwsUserAgent string
 
-@secure()
-@description('Azure Maps key. Sourced from the azd environment; never committed.')
-param azureMapsSubscriptionKey string
+@description('Azure Maps account created by this template. The app reads its key from here, so no Maps secret is carried in configuration.')
+param mapsAccountName string
 
 param apimResourceGroup string
 param apimServiceName string
@@ -56,7 +55,7 @@ module backend 'modules/backend.bicep' = {
     logAnalyticsWorkspaceId: logAnalyticsWorkspaceId
     deploymentContainerName: deploymentContainerName
     nwsUserAgent: nwsUserAgent
-    azureMapsSubscriptionKey: azureMapsSubscriptionKey
+    mapsAccountName: mapsAccountName
   }
 }
 
@@ -84,3 +83,4 @@ output FUNCTION_APP_NAME string = backend.outputs.functionAppName
 output FUNCTION_APP_API_URL string = backend.outputs.functionAppApiUrl
 output FUNCTION_APP_PRINCIPAL_ID string = backend.outputs.functionAppPrincipalId
 output GEO_API_BASE_URL string = geoApi.outputs.gatewayApiUrl
+output MAPS_ACCOUNT_NAME string = backend.outputs.mapsAccountName

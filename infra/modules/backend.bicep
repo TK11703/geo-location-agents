@@ -25,8 +25,7 @@ param elevationEndpoint string = 'https://epqs.nationalmap.gov/v1/json'
 @description('Contact string the National Weather Service requires on every request.')
 param nwsUserAgent string
 
-@secure()
-param azureMapsSubscriptionKey string
+param mapsAccountName string
 
 @description('azd matches this to the service in azure.yaml when deploying code.')
 param serviceName string = 'api'
@@ -96,6 +95,22 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   }
 }
 
+// Gen1 (S0 and S1) is retired, so G2 is the only tier a new account can be created with.
+// Maps accounts exist in six locations only, none of which is guaranteed to be this group's
+// region, so this stays global rather than following `location`.
+resource maps 'Microsoft.Maps/accounts@2023-06-01' = {
+  name: mapsAccountName
+  location: 'global'
+  tags: tags
+  sku: {
+    name: 'G2'
+  }
+  kind: 'Gen2'
+  properties: {
+    disableLocalAuth: false
+  }
+}
+
 var storageConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storage.name};AccountKey=${storage.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
 
 resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
@@ -151,7 +166,7 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         }
         {
           name: 'AzureMaps__SubscriptionKey'
-          value: azureMapsSubscriptionKey
+          value: maps.listKeys().primaryKey
         }
         {
           name: 'Elevation__Endpoint'
@@ -194,3 +209,4 @@ resource blobContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = 
 output functionAppName string = functionApp.name
 output functionAppPrincipalId string = functionApp.identity.principalId
 output functionAppApiUrl string = 'https://${functionApp.properties.defaultHostName}/api'
+output mapsAccountName string = maps.name

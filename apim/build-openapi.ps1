@@ -1,5 +1,8 @@
 # Merges the four per-specialist specs into one document for APIM import.
 # Foundry consumes specs/*.json individually; APIM needs a single API at one path.
+#
+# This document describes the backend, not the gateway: it is what APIM imports to learn the
+# operations it will forward. The specialists' own copies point at the gateway instead.
 param(
     [string]$SpecsDir = (Join-Path $PSScriptRoot '..\specs'),
     [string]$OutFile = (Join-Path $PSScriptRoot 'geo-api.openapi.json')
@@ -7,7 +10,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$config = & (Join-Path $PSScriptRoot '..\scripts\Get-AzdConfig.ps1') -Require GEO_API_BASE_URL
+$config = & (Join-Path $PSScriptRoot '..\scripts\Get-AzdConfig.ps1') -Require FUNCTION_APP_API_URL
 
 # APIM's importer rejects 3.1 union types, so rewrite type:[X,"null"] as type:X + nullable:true.
 function Convert-NullableType {
@@ -38,7 +41,7 @@ $merged = [ordered]@{
         version     = '1.0.0'
         description = 'Weather, terrain, mobility, and location endpoints consumed by Foundry specialist agents.'
     }
-    servers = @(@{ url = $config.GEO_API_BASE_URL })
+    servers = @(@{ url = $config.FUNCTION_APP_API_URL })
     paths   = [ordered]@{}
     components = [ordered]@{}
 }

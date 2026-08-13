@@ -7,7 +7,7 @@
   },
   "servers": [
     {
-      "url": "https://holonet-apim-databank-8108.azure-api.net/geo"
+      "url": "https://func-erdc-agents-feawr7.azurewebsites.net/api"
     }
   ],
   "paths": {

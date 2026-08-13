@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": { "value": "${AZURE_ENV_NAME}" },
+    "location": { "value": "${AZURE_LOCATION}" },
+    "functionAppResourceGroup": { "value": "${FUNCTION_APP_RESOURCE_GROUP}" },
+    "functionAppName": { "value": "${FUNCTION_APP_NAME}" },
+    "storageAccountName": { "value": "${STORAGE_ACCOUNT_NAME}" },
+    "hostingPlanName": { "value": "${HOSTING_PLAN_NAME}" },
+    "appInsightsName": { "value": "${APP_INSIGHTS_NAME}" },
+    "logAnalyticsWorkspaceId": { "value": "${LOG_ANALYTICS_WORKSPACE_ID}" },
+    "deploymentContainerName": { "value": "${DEPLOYMENT_CONTAINER_NAME}" },
+    "nwsUserAgent": { "value": "${NWS_USER_AGENT}" },
+    "azureMapsSubscriptionKey": { "value": "${AZURE_MAPS_SUBSCRIPTION_KEY}" },
+    "apimResourceGroup": { "value": "${APIM_RESOURCE_GROUP}" },
+    "apimServiceName": { "value": "${APIM_SERVICE_NAME}" },
+    "apimApiId": { "value": "${APIM_API_ID}" },
+    "apimApiPath": { "value": "${APIM_API_PATH}" },
+    "entraTenantId": { "value": "${AZURE_TENANT_ID}" },
+    "geoApiAudience": { "value": "${GEO_API_AUDIENCE}" },
+    "foundryMiPrincipalId": { "value": "${FOUNDRY_MI_PRINCIPAL_ID}" }
+  }
+}

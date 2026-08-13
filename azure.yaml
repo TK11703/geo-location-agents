@@ -6,3 +6,13 @@
 name: erdc-agents
 metadata:
   template: erdc-agents@1.0.0
+
+infra:
+  provider: bicep
+  path: infra
+
+services:
+  api:
+    project: src/ERDC.Agents
+    language: dotnet
+    host: function

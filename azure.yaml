@@ -16,3 +16,10 @@ services:
     project: src/ERDC.Agents
     language: dotnet
     host: function
+
+# The specialists call the gateway, which fronts the function app, so they are published only after
+# the app has code on it. Agents whose definition is unchanged are skipped by the script itself.
+hooks:
+  postdeploy:
+    shell: pwsh
+    run: ./agents/deploy-agents.ps1

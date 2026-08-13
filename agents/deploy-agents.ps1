@@ -15,6 +15,10 @@
     Target project, model, audience, and gateway URL all come from the active azd environment, so
     this script is identical across environments.
 
+    Rerunning is safe. Foundry returns the existing version when a submitted definition matches the
+    current one, so identical redeploys do not accumulate versions; this script reads the version
+    before and after publishing to report which agents actually moved.
+
 .EXAMPLE
     ./agents/deploy-agents.ps1
     ./agents/deploy-agents.ps1 -Only weather-specialist
@@ -108,9 +112,18 @@ foreach ($a in $agents) {
         )
     }
 
-    $body = @{ definition = $definition } | ConvertTo-Json -Depth 100 -Compress
     $url = "$($config.FOUNDRY_PROJECT_ENDPOINT)/agents/$($a.Name)/versions?api-version=$ApiVersion"
+
+    # Foundry itself decides whether a submission differs from the current version, which is a
+    # sounder comparison than anything reconstructed here. All this needs is the version to compare
+    # the result against. An agent that does not exist yet returns an empty list rather than a 404,
+    # so this stays null and the first publish is reported as a new version.
+    $versions = Invoke-RestMethod -Uri $url -Headers $headers
+    $before = ($versions.data | Sort-Object { [int]$_.version } -Descending | Select-Object -First 1).version
+
+    $body = @{ definition = $definition } | ConvertTo-Json -Depth 100 -Compress
     $result = Invoke-RestMethod -Method Post -Uri $url -Headers $headers -ContentType 'application/json' -Body $body
 
-    "{0,-22} -> version {1}" -f $a.Name, $result.version
+    if ($result.version -eq $before) { "{0,-22}    unchanged (version {1})" -f $a.Name, $result.version }
+    else { "{0,-22} -> version {1}" -f $a.Name, $result.version }
 }

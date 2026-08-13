@@ -1,164 +1,78 @@
-# What this sample demonstrates
+# Geo Orchestrator
 
-A hotel search assistant with local C# function tools — the **Agent with Local Tools (Responses Protocol)** sample demonstrates how to define tools using `AIFunctionFactory.Create` that the LLM can invoke via [Agent Framework](https://github.com/microsoft/agent-framework). This is a key advantage of code-based hosted agents over prompt agents.
+A hosted agent that answers geospatial questions by fanning out to the four specialist prompt agents
+and merging their reports into one answer.
 
-## How It Works
+Each specialist is registered as a tool rather than called on a fixed schedule, so the model decides
+which domains a question touches and calls those in parallel. The specialists in turn reach the
+backend through API Management, so this agent never talks to the function app directly.
 
-The agent registers local C# functions as tools using `AIFunctionFactory.Create`. When a user asks about hotels, the LLM decides which tools to call (e.g., searching for hotels by location, dates, and price), the framework executes the C# functions locally, and feeds the results back to the model to compose a natural-language response.
-
-See [Program.cs](src/local-tools/Program.cs) for the full implementation.
-
-## Prerequisites
-
-1. An existing Foundry project with a deployed model (or create them during setup in Option 1 — `azd provision` can create them for you).
-2. **[.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)** or later.
-
-### Environment variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `FOUNDRY_PROJECT_ENDPOINT` | Yes | Foundry project endpoint. Auto-injected in hosted containers; set automatically by `azd ai agent run` locally. |
-| `AZURE_AI_MODEL_DEPLOYMENT_NAME` | Yes | Model deployment name — must match your Foundry project deployment. Declared in `azure.yaml`. |
-| `APPLICATIONINSIGHTS_CONNECTION_STRING` | Recommended | Enables telemetry. Auto-injected in hosted containers; set manually for local dev. |
-
-When using `azd ai agent run`, these are handled automatically. For manual runs, set them in your shell — .NET does not read `.env` files natively.
-
-## Option 1: Azure Developer CLI (`azd`)
-
-### Prerequisites
-
-1. **Azure Developer CLI (`azd`)** — [Install azd](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd)
-2. Install the Foundry extension:
-
-   ```bash
-   azd ext install microsoft.foundry
-   ```
-
-3. Authenticate:
-
-   ```bash
-   azd auth login
-   ```
-
-### Initialize the agent project
-
-No cloning required. Create a new folder and initialize from the manifest:
-
-```bash
-mkdir local-tools-agent && cd local-tools-agent
-azd ai agent init -m https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/agent-framework/local-tools/azure.yaml
+```
+geo-orchestrator (hosted, this project)
+    -> weather / terrain / mobility / location specialists (prompt agents)
+        -> APIM  ->  function app
 ```
 
-Follow the prompts to configure your Foundry project and model deployment. If you don't have an existing Foundry project, `azd ai agent init` will guide you through creating one.
+## Why this is a separate azd project
 
-> If you already have a Foundry project and model deployment, add `-p <project-id> -d <deployment-name>` to `azd ai agent init` to target existing resources.
+The repository root is an azd project using the Bicep provider, which is what provisions the
+function app and the APIM API. This one uses the `microsoft.foundry` provider. A single azd project
+cannot do both, so the two live side by side and are deployed independently.
 
-### Provision Azure resources (if needed)
+## Deploying
 
-If you don't already have a Foundry project and model deployment:
-
-```bash
-azd provision
+```pwsh
+azd deploy geo-orchestrator --cwd orchestrator
 ```
 
-### Run the agent locally
+Deploy the named service, and do not run `azd provision` here. The `ai-project` service in
+[azure.yaml](azure.yaml) declares the `gpt-4.1` deployment only so that azd can resolve the
+reference; that deployment is shared with other agents on the account, and provisioning would
+reshape it.
 
-```bash
-azd ai agent run
+Deployment is a remote build from source — there is no Dockerfile.
+
+## Environment variables
+
+| Variable | Where it comes from |
+|----------|---------------------|
+| `FOUNDRY_PROJECT_ENDPOINT` | `azure.yaml` when hosted, `src/geo-orchestrator/.env` when local |
+| `AZURE_AI_MODEL_DEPLOYMENT_NAME` | same |
+
+`.env` is excluded from deployment by [.azdignore](src/geo-orchestrator/.azdignore), so anything the
+hosted container needs has to be declared in `azure.yaml`.
+
+## Running locally
+
+```pwsh
+az login
+azd ai agent run --cwd orchestrator
 ```
 
-The agent host will start on `http://localhost:8088`.
+The host listens on `http://localhost:8088`. Managed identity is excluded from the credential chain
+off Azure — see the comment in [Program.cs](src/geo-orchestrator/Program.cs) for why that is not
+optional.
 
-### Invoke the local agent
+## Testing
 
-In a separate terminal, invoke the running agent:
+[ask.ps1](ask.ps1) sends a single request in a fresh conversation, which `azd ai agent invoke
+--new-session` does not do: it keeps the conversation, so a repeated question can be answered from
+history without calling any tool.
 
-```bash
-azd ai agent invoke --local "Find hotels in Seattle for Dec 20-25 under $200/night"
+```pwsh
+./orchestrator/ask.ps1 -Message 'Conditions at 47.6062, -122.3321?'
+./orchestrator/ask.ps1 -Message 'Conditions at 51.5072, -0.1276?' -Deployed
 ```
 
-Or use curl directly:
+A hosted agent is reached at `/agents/<name>/endpoint/protocols/openai/responses`. The project-level
+`/openai/v1/responses` route used for prompt agents rejects it.
 
-```bash
-curl -sS -X POST http://localhost:8088/responses \
-  -H "Content-Type: application/json" \
-  -d '{"input": "Find hotels in Seattle for Dec 20-25 under $200/night", "stream": false}' | jq .
-```
+London is the useful test case: it is outside both the USGS elevation coverage and the United States
+National Weather Service, so a correct answer reports the elevation gap and attributes the weather
+alert to the worldwide feed.
 
-### Deploy to Foundry
-
-Once tested locally, deploy to Microsoft Foundry:
-
-```bash
-azd deploy
-```
-
-For the full deployment guide, see [Deploy a hosted agent](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/deploy-hosted-agent).
-
-### Invoke the deployed agent
-
-```bash
-azd ai agent invoke "Find hotels in Seattle for Dec 20-25 under $200/night"
-```
-
-Stream logs from the running agent with `azd ai agent monitor`.
-
-## Option 2: VS Code (Foundry Toolkit)
-
-### Prerequisites
-
-1. **VS Code** with the **[Foundry Toolkit](https://marketplace.visualstudio.com/items?itemName=ms-windows-ai-studio.windows-ai-studio)** extension installed.
-2. [C# Dev Kit](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit) extension.
-3. Command Palette (`Ctrl+Shift+P`) → **C#: Check Workspace Requirements** to confirm the toolchain is ready.
-
-### Run and debug the agent
-
-Press **F5** to start the agent. The agent starts and the **Agent Inspector** opens automatically. Chat with the agent in the Inspector.
-
-### Or run manually, then open the Inspector
-
-1. Restore dependencies:
-
-   ```bash
-   dotnet restore
-   ```
-
-2. Configure the agent: create a `.env` file with the [required variables](#environment-variables). The sample loads `.env` automatically on startup.
-
-3. Sign in to Azure with the Azure CLI so `DefaultAzureCredential` can authenticate the terminal process (the **F5** path reuses the Azure sign-in from the Foundry Toolkit, so it doesn't need a separate `az login`):
-
-   ```bash
-   az login
-   ```
-
-4. Start the agent (listens on `http://localhost:8088`):
-
-   ```bash
-   dotnet run
-   ```
-
-5. Open the Command Palette (`Ctrl+Shift+P`) → **Foundry Toolkit: Open Agent Inspector**, then send a message to test.
-
-### Deploy to Foundry
-
-1. Open the Command Palette (`Ctrl+Shift+P`) and run **Foundry Toolkit: Deploy Hosted Agent**. The extension opens a **Deploy Hosted Agent** wizard and reads `agent.yaml` to auto-populate settings.
-2. If prompted, complete **Foundry Project Setup** to select subscription and project.
-3. On the **Basics** tab, choose deployment method (**Code** or **Container**) and confirm the agent name.
-4. On **Review + Deploy**, confirm runtime details, pick **CPU and Memory** size, and click **Deploy**.
-5. After deployment, invoke the agent in the Agent Playground and stream live logs from the **Logs** tab.
-
-## Troubleshooting
-
-### Images built on Apple Silicon or other ARM64 machines do not work on our service
-
-**Deploy with `azd deploy`**, which uses ACR remote build and always produces images with the correct architecture.
-
-If you choose to **build locally**, and your machine is **not `linux/amd64`** (for example, an Apple Silicon Mac), the image will **not be compatible with our service**, causing runtime failures.
-
-**Fix for local builds:**
-
-```bash
-docker build --platform=linux/amd64 -t image .
-```
-
-This forces the image to be built for the required `amd64` architecture.
+The elevation caveat is reliable. The alert-source caveat is not: across repeated runs the weather
+specialist emitted it roughly three times in four, dropping it in the rest even though its
+instructions require it whenever an alert came from the worldwide feed. Provenance therefore rests
+on the model choosing to mention it, which is worth moving into the tool response or the report
+schema rather than leaving to instruction alone.

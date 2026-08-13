@@ -1,1 +1,4 @@
 .env.example
+
+# Local developer settings. The hosted agent gets these from azure.yaml instead.
+.env

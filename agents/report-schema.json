@@ -5,7 +5,7 @@
   "schema": {
     "type": "object",
     "additionalProperties": false,
-    "required": ["status", "summary", "findings", "caveats"],
+    "required": ["status", "summary", "findings", "sources", "caveats"],
     "properties": {
       "status": {
         "type": "string",
@@ -29,6 +29,11 @@
             "unit": { "type": ["string", "null"], "description": "The unit the tool reported, or null when the value is unitless." }
           }
         }
+      },
+      "sources": {
+        "type": "array",
+        "description": "The exact name of every tool whose response you relied on, for example getNwsAlerts. Include a tool you fell back to as well as the one you tried first. Empty only when status is needs_input and no tool was called. This is the record of which provider actually answered, so it is reported as fact rather than left for the reader to infer.",
+        "items": { "type": "string" }
       },
       "caveats": {
         "type": "array",

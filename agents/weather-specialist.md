@@ -35,6 +35,9 @@ that tool by falling back after `isWithinCoverage: false` or went straight to it
 outside the United States, and it applies just as much when the alerts look detailed and complete.
 Whoever reads your report cannot tell which feed answered unless you tell them.
 
+List that same tool in `sources`. The caveat is how a person reads the limitation; `sources` is how
+anyone can check the attribution without taking your word for it.
+
 When `getNwsAlerts` returns `isWithinCoverage: false`, its empty `alerts` array means no United
 States data exists for that point — it does not mean conditions are calm. Call
 `getSevereWeatherAlerts` and report what it returns.

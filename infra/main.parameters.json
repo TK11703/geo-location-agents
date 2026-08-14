@@ -4,21 +4,16 @@
   "parameters": {
     "environmentName": { "value": "${AZURE_ENV_NAME}" },
     "location": { "value": "${AZURE_LOCATION}" },
-    "functionAppResourceGroup": { "value": "${FUNCTION_APP_RESOURCE_GROUP}" },
-    "functionAppName": { "value": "${FUNCTION_APP_NAME}" },
-    "storageAccountName": { "value": "${STORAGE_ACCOUNT_NAME}" },
-    "hostingPlanName": { "value": "${HOSTING_PLAN_NAME}" },
-    "appInsightsName": { "value": "${APP_INSIGHTS_NAME}" },
-    "logAnalyticsWorkspaceId": { "value": "${LOG_ANALYTICS_WORKSPACE_ID}" },
-    "deploymentContainerName": { "value": "${DEPLOYMENT_CONTAINER_NAME}" },
-    "nwsUserAgent": { "value": "${NWS_USER_AGENT}" },
-    "mapsAccountName": { "value": "${MAPS_ACCOUNT_NAME}" },
-    "apimResourceGroup": { "value": "${APIM_RESOURCE_GROUP}" },
-    "apimServiceName": { "value": "${APIM_SERVICE_NAME}" },
-    "apimApiId": { "value": "${APIM_API_ID}" },
-    "apimApiPath": { "value": "${APIM_API_PATH}" },
+    "resourceGroupName": { "value": "${AZURE_RESOURCE_GROUP}" },
+    "deployerPrincipalId": { "value": "${AZURE_PRINCIPAL_ID}" },
+    "deployerPrincipalType": { "value": "${AZURE_PRINCIPAL_TYPE=User}" },
     "entraTenantId": { "value": "${AZURE_TENANT_ID}" },
+    "nwsUserAgent": { "value": "${NWS_USER_AGENT}" },
+    "apimSku": { "value": "${APIM_SKU=Developer}" },
+    "apimPublisherName": { "value": "${APIM_PUBLISHER_NAME=ERDC Agents}" },
+    "apimPublisherEmail": { "value": "${APIM_PUBLISHER_EMAIL}" },
     "geoApiAudience": { "value": "${GEO_API_AUDIENCE}" },
-    "foundryMiPrincipalId": { "value": "${FOUNDRY_MI_PRINCIPAL_ID}" }
+    "orchestratorDeploymentName": { "value": "${ORCHESTRATOR_MODEL=gpt-4.1}" },
+    "specialistDeploymentName": { "value": "${SPECIALIST_MODEL=gpt-4-1-mini}" }
   }
 }

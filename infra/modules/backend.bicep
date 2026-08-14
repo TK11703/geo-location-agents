@@ -1,5 +1,5 @@
-// Backend for the geo API: storage, Flex Consumption plan, App Insights, and the function app.
-// The function app already exists, so this template is written to match it and update in place.
+// Backend for the geo API: Log Analytics, storage, Flex Consumption plan, App Insights, and the
+// function app. Everything here is created by this template.
 
 @description('Azure region for all resources in this group.')
 param location string
@@ -8,9 +8,10 @@ param functionAppName string
 param storageAccountName string
 param hostingPlanName string
 param appInsightsName string
+param logAnalyticsWorkspaceName string
 
-@description('Existing Log Analytics workspace backing App Insights. Lives outside this resource group.')
-param logAnalyticsWorkspaceId string
+@description('Days of log retention on the workspace backing App Insights.')
+param logRetentionDays int = 30
 
 @description('Blob container holding the deployment package. Created by Flex Consumption on first publish.')
 param deploymentContainerName string
@@ -21,6 +22,7 @@ param mapImageContainerName string = 'map-images'
 param mapImageUrlMinutes int = 15
 param azureMapsEndpoint string = 'https://atlas.microsoft.com'
 param elevationEndpoint string = 'https://epqs.nationalmap.gov/v1/json'
+param nwsEndpoint string = 'https://api.weather.gov'
 
 @description('Contact string the National Weather Service requires on every request.')
 param nwsUserAgent string
@@ -33,6 +35,18 @@ param serviceName string = 'api'
 param tags object = {}
 
 var storageBlobDataContributor = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+
+resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
+  name: logAnalyticsWorkspaceName
+  location: location
+  tags: tags
+  properties: {
+    sku: {
+      name: 'PerGB2018'
+    }
+    retentionInDays: logRetentionDays
+  }
+}
 
 resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: storageAccountName
@@ -91,7 +105,7 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   kind: 'web'
   properties: {
     Application_Type: 'web'
-    WorkspaceResourceId: logAnalyticsWorkspaceId
+    WorkspaceResourceId: logAnalytics.id
   }
 }
 
@@ -173,6 +187,10 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
           value: elevationEndpoint
         }
         {
+          name: 'Nws__Endpoint'
+          value: nwsEndpoint
+        }
+        {
           name: 'Nws__UserAgent'
           value: nwsUserAgent
         }
@@ -210,3 +228,4 @@ output functionAppName string = functionApp.name
 output functionAppPrincipalId string = functionApp.identity.principalId
 output functionAppApiUrl string = 'https://${functionApp.properties.defaultHostName}/api'
 output mapsAccountName string = maps.name
+output logAnalyticsWorkspaceId string = logAnalytics.id

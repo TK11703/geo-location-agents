@@ -20,6 +20,9 @@ services:
 # The specialists call the gateway, which fronts the function app, so they are published only after
 # the app has code on it. Agents whose definition is unchanged are skipped by the script itself.
 hooks:
+  preprovision:
+    shell: pwsh
+    run: ./scripts/Initialize-AzdEnvironment.ps1
   postdeploy:
     shell: pwsh
     run: ./agents/deploy-agents.ps1

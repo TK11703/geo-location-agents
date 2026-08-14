@@ -25,10 +25,10 @@ cannot do both, so the two live side by side and are deployed independently.
 azd deploy geo-orchestrator --cwd orchestrator
 ```
 
-Deploy the named service, and do not run `azd provision` here. The `ai-project` service in
-[azure.yaml](azure.yaml) declares the `gpt-4.1` deployment only so that azd can resolve the
-reference; that deployment is shared with other agents on the account, and provisioning would
-reshape it.
+Deploy the named service, and do not run `azd provision` here. The Foundry account, the project, and
+both model deployments are created by the root project's Bicep, so provisioning from this side would
+give those resources a second owner. The `ai-project` service in [azure.yaml](azure.yaml) carries
+only the endpoint, so that azd can resolve the reference.
 
 Deployment is a remote build from source — there is no Dockerfile.
 

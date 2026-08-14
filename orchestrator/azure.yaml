@@ -7,17 +7,8 @@ name: geo-orchestrator
 services:
     ai-project:
         host: azure.ai.project
-        # Mirrors a deployment that already exists on this shared Foundry account so provision is a
-        # no-op. Changing any field here would resize a deployment other agents depend on.
-        deployments:
-            - model:
-                format: OpenAI
-                name: gpt-4.1
-                version: "2025-04-14"
-              name: gpt-4.1
-              sku:
-                capacity: 50
-                name: GlobalStandard
+        # The model deployments belong to the root project's Bicep, which owns the Foundry account
+        # they sit on. Declaring them again here would give one resource two owners.
         endpoint: ${FOUNDRY_PROJECT_ENDPOINT}
     geo-orchestrator:
         project: src/geo-orchestrator

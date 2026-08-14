@@ -6,6 +6,7 @@
     "AzureMaps__SubscriptionKey": "your-azure-maps-subscription-key",
     "AzureMaps__Endpoint": "https://atlas.microsoft.com",
     "Nws__UserAgent": "ERDC.Agents (you@example.com)",
+    "Nws__Endpoint": "https://api.weather.gov",
     "Elevation__Endpoint": "https://epqs.nationalmap.gov/v1/json",
     "Storage__MapImageContainer": "map-images",
     "Storage__MapImageUrlMinutes": "15",

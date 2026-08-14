@@ -49,6 +49,7 @@ public class NwsAlertServiceTests
         await service.GetActiveAlertsAsync(new NwsAlertQuery(47.6062, -122.3321), CancellationToken.None);
 
         var request = handler.Requests.Single();
+        Assert.Equal("api.weather.gov", request.Uri.Host);
         Assert.Equal("/alerts/active", request.Uri.AbsolutePath);
         Assert.Equal("47.6062,-122.3321", QueryHelpers.ParseQuery(request.Uri.Query)["point"]);
     }
@@ -159,10 +160,33 @@ public class NwsAlertServiceTests
     {
         var service = new NwsAlertService(
             new HttpClient(new RecordingHandler(JsonResponse(AlertsJson))),
-            new ConfigurationBuilder().Build());
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Nws:Endpoint"] = "https://api.weather.gov"
+                })
+                .Build());
 
         await Assert.ThrowsAsync<NwsConfigurationException>(() =>
             service.GetActiveAlertsAsync(new NwsAlertQuery(47.6062, -122.3321), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task GetActiveAlertsAsync_WithoutEndpoint_ThrowsConfigurationException()
+    {
+        var service = new NwsAlertService(
+            new HttpClient(new RecordingHandler(JsonResponse(AlertsJson))),
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Nws:UserAgent"] = "TestApp (test@example.com)"
+                })
+                .Build());
+
+        var exception = await Assert.ThrowsAsync<NwsConfigurationException>(() =>
+            service.GetActiveAlertsAsync(new NwsAlertQuery(47.6062, -122.3321), CancellationToken.None));
+
+        Assert.Contains("Nws__Endpoint", exception.Message);
     }
 
     private static NwsAlertService CreateService(HttpMessageHandler handler)

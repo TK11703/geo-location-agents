@@ -9,8 +9,6 @@ namespace ERDC.Agents.Services;
 
 public sealed class NwsAlertService(HttpClient httpClient, IConfiguration configuration) : INwsAlertService
 {
-    private const string DefaultEndpoint = "https://api.weather.gov";
-
     // Ordered least to most urgent so the highest value present wins.
     private static readonly string[] SeverityRanking =
         ["Unknown", "Minor", "Moderate", "Severe", "Extreme"];
@@ -131,7 +129,7 @@ public sealed class NwsAlertService(HttpClient httpClient, IConfiguration config
         var userAgent = configuration["Nws:UserAgent"];
         if (string.IsNullOrWhiteSpace(userAgent))
         {
-            throw new NwsConfigurationException();
+            throw new NwsConfigurationException("Nws__UserAgent");
         }
 
         var message = new HttpRequestMessage(HttpMethod.Get, uri);
@@ -140,12 +138,20 @@ public sealed class NwsAlertService(HttpClient httpClient, IConfiguration config
         return message;
     }
 
-    private string GetEndpoint() =>
-        (configuration["Nws:Endpoint"] ?? DefaultEndpoint).TrimEnd('/');
+    private string GetEndpoint()
+    {
+        var endpoint = configuration["Nws:Endpoint"];
+        if (string.IsNullOrWhiteSpace(endpoint))
+        {
+            throw new NwsConfigurationException("Nws__Endpoint");
+        }
+
+        return endpoint.TrimEnd('/');
+    }
 }
 
-public sealed class NwsConfigurationException()
-    : Exception("National Weather Service configuration is missing. Set Nws__UserAgent.");
+public sealed class NwsConfigurationException(string settingName)
+    : Exception($"National Weather Service configuration is missing. Set {settingName}.");
 
 public sealed class NwsException(string message, HttpStatusCode statusCode) : Exception(message)
 {

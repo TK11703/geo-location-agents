@@ -102,10 +102,12 @@ flowchart TB
         OrchSrc["orchestrator/src/geo-orchestrator"]
     end
 
+    Pre["preprovision hook<br/>scripts/Initialize-AzdEnvironment.ps1<br/>Entra app registration"]
     Root["azd up at the root<br/>bicep provider"]
     Hook["postdeploy hook<br/>agents/deploy-agents.ps1"]
     Sub["azd deploy geo-orchestrator<br/>microsoft.foundry provider<br/>never azd provision"]
 
+    Pre --> Root
     Infra --> Root
     Api --> Root
     Root --> Hook
@@ -114,9 +116,81 @@ flowchart TB
     OrchSrc --> Sub --> Hosted["geo-orchestrator hosted agent"]
 ```
 
-The API Management instance, the Foundry account and project, the model deployments, and the Entra
-app registration are all shared with other work and are deliberately outside the infrastructure this
-repo provisions.
+### Deploying into an empty subscription
+
+`infra/main.bicep` creates everything: the resource group, Log Analytics, storage, the Flex
+Consumption plan, App Insights, the Azure Maps account, the function app, the API Management
+instance, and the Foundry account, project, and both model deployments. No resource is referenced as
+pre-existing, so the only inputs are a subscription, a tenant, a region, and a resource group name.
+
+Resource names are derived from the environment name and a hash of the subscription and region, so
+nothing has to be chosen or reserved up front.
+
+[scripts/New-Deployment.ps1](scripts/New-Deployment.ps1) runs the whole sequence — both sign-ins,
+both azd environments, and both projects in the order they depend on each other:
+
+```powershell
+./scripts/New-Deployment.ps1 `
+    -TenantId <tenant-id> `
+    -SubscriptionId <subscription-id> `
+    -NwsUserAgent 'ERDC.Agents (you@example.com)' `
+    -ApimPublisherEmail you@example.com
+```
+
+There is nothing to edit first. Every value is held in the azd environment, which is what
+[infra/main.parameters.json](infra/main.parameters.json) substitutes into Bicep, so retargeting a
+different subscription or tenant means different arguments rather than a changed file.
+
+| Value | Argument | Default |
+|-------|----------|---------|
+| Tenant | `-TenantId` | required |
+| Subscription | `-SubscriptionId` | required |
+| NWS contact string | `-NwsUserAgent` | required; the National Weather Service blocks callers that omit it |
+| APIM notification address | `-ApimPublisherEmail` | required by the ARM resource |
+| Environment name | `-EnvironmentName` | `erdc-agents-dev` |
+| Region | `-Location` | `eastus` |
+| Resource group | `-ResourceGroupName` | `rg-<environment name>` |
+| APIM tier | `-ApimSku` | `Developer` |
+| Existing gateway audience | `-GeoApiAudience` | created by the preprovision hook |
+
+Everything else — `GEO_API_BASE_URL`, `FOUNDRY_PROJECT_ENDPOINT`, the function app name, the
+principal ids — is a Bicep output that azd writes back into the environment, and the script reads it
+from there when it configures the orchestrator. Pass `-ConfigureOnly` to populate the environment
+and stop before anything is provisioned, or `-SkipOrchestrator` to stop after the backend.
+
+Both CLIs have to be signed in to the same tenant, which is why the script does both: azd
+provisions, but the preprovision and postdeploy hooks call `az`. Signing in to only one produces a
+deployment that fails at a hook rather than at the start.
+
+Two things are not ARM resources and so are handled outside the template. The Entra app registration
+whose App ID URI the gateway validates is created by the preprovision hook, which needs the Entra
+Application Developer role the first time it runs in a tenant; pass `-GeoApiAudience` to reuse one
+that already exists instead. And Foundry data-plane access is not implied by subscription
+Owner, so the template grants the deploying principal Foundry User and Foundry Project Manager on the
+account — without those the postdeploy hook cannot publish the specialists.
+
+Budget for the wait. API Management Developer takes 30 to 45 minutes to provision and has no SLA. It
+is the cheapest tier that still supports the `rate-limit-by-key` policy this API applies; Consumption
+does not support that policy at all. `-ApimSku Basicv2` trades cost for a deployment that finishes in
+minutes.
+
+The orchestrator is a separate azd project under `orchestrator/` and is deployed after this one, with
+`FOUNDRY_PROJECT_ENDPOINT` and `AZURE_AI_MODEL_DEPLOYMENT_NAME` taken from the outputs above. Its
+own azd environment lives under `orchestrator/.azure`, and the script creates and populates it.
+
+Deploying the orchestrator makes azd record the Foundry account, the project id, the model
+deployments, and the published agent version in that environment, so one left over from an earlier
+target describes resources the current run did not create. The script compares
+`FOUNDRY_PROJECT_ENDPOINT` against the outputs it just read and discards an environment that does
+not match rather than repointing it; the root environment is checked the same way against
+`AZURE_SUBSCRIPTION_ID`. A deployment into an empty subscription therefore cannot inherit anything
+from the last one, whatever is already in `.azure`.
+
+When it finishes, [orchestrator/ask.ps1](orchestrator/ask.ps1) is the smoke test:
+
+```powershell
+./orchestrator/ask.ps1 -Message 'Conditions at 51.5072, -0.1276?' -Deployed
+```
 
 ## API
 
@@ -422,7 +496,7 @@ The tests mock upstream HTTP responses and do not require credentials or network
 | `AzureMaps__SubscriptionKey` | Yes | None | Server-side Azure Maps authentication key. Set from the provisioned account when deployed; supply your own for local development. |
 | `AzureMaps__Endpoint` | No | `https://atlas.microsoft.com` | Azure Maps endpoint, configurable for sovereign clouds or tests. |
 | `Nws__UserAgent` | For `/api/alerts/nws` | None | Contact User-Agent required by the National Weather Service, in the form `AppName (contact@example.com)`. |
-| `Nws__Endpoint` | No | `https://api.weather.gov` | National Weather Service endpoint, configurable for tests. |
+| `Nws__Endpoint` | For `/api/alerts/nws` | `https://api.weather.gov` in the provided app settings | National Weather Service endpoint, configurable for tests. |
 | `Elevation__Endpoint` | No | `https://epqs.nationalmap.gov/v1/json` | USGS 3DEP point query endpoint, configurable for tests. |
 
 Do not commit `local.settings.json`. The key is sent to Azure Maps in the `subscription-key` header and is never included in request URLs or API responses.
@@ -432,10 +506,11 @@ Do not commit `local.settings.json`. The key is sent to Azure Maps in the `subsc
 ```powershell
 $env:AzureMaps__SubscriptionKey = "<your-key>"
 $env:Nws__UserAgent = "ERDC.Agents (<your-contact>)"
+$env:Nws__Endpoint = "https://api.weather.gov"
 dotnet run --project .\src\ERDC.Agents
 ```
 
-For a deployed Function App, both settings are applied by the Bicep template. `AzureMaps__SubscriptionKey` is read from the Azure Maps account the template creates, so no Maps key is stored in configuration or in the azd environment, and `Nws__UserAgent` comes from `NWS_USER_AGENT` in the azd environment. Neither is carried over from `local.settings.json` or user secrets. A missing setting is logged by the function and returns `503 Service Unavailable` without exposing configuration details to the caller.
+For a deployed Function App, these settings are applied by the Bicep template. `AzureMaps__SubscriptionKey` is read from the Azure Maps account the template creates, so no Maps key is stored in configuration or in the azd environment, `Nws__UserAgent` comes from `NWS_USER_AGENT` in the azd environment, and `Nws__Endpoint` defaults to `https://api.weather.gov` in Bicep. They are not carried over from `local.settings.json` or user secrets. A missing setting is logged by the function and returns `503 Service Unavailable` without exposing configuration details to the caller.
 
 All Azure Maps calls use the server-side subscription key, which never leaves the
 Function App. The National Weather Service and USGS endpoints are public and require no

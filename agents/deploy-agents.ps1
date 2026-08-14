@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Creates or updates the four specialist prompt agents in Microsoft Foundry.
+    Creates or updates the specialist prompt agents in Microsoft Foundry.
 
 .DESCRIPTION
     Each agent is assembled from files in this repo so the deployed agent cannot drift from source:
@@ -35,6 +35,12 @@ $config = & (Join-Path $PSScriptRoot '..\scripts\Get-AzdConfig.ps1') `
     -Require FOUNDRY_PROJECT_ENDPOINT, SPECIALIST_MODEL, GEO_API_AUDIENCE, GEO_API_BASE_URL
 
 $agents = @(
+    @{
+        Name        = 'place-resolver'
+        Spec        = 'place.json'
+        Tool        = 'geo_place'
+        Description = 'Turns a written place name or street address into candidate latitude and longitude coordinates.'
+    }
     @{
         Name        = 'weather-specialist'
         Spec        = 'weather.json'

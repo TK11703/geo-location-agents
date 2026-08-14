@@ -1,4 +1,4 @@
-# Merges the four per-specialist specs into one document for APIM import.
+# Merges the per-specialist specs into one document for APIM import.
 # Foundry consumes specs/*.json individually; APIM needs a single API at one path.
 #
 # This document describes the backend, not the gateway: it is what APIM imports to learn the

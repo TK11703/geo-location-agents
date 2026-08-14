@@ -11,6 +11,7 @@ var builder = FunctionsApplication.CreateBuilder(args);
 builder.ConfigureFunctionsWebApplication();
 builder.Services.AddHttpClient<IMapImageService, AzureMapsService>();
 builder.Services.AddHttpClient<IMapRouteService, AzureMapsRouteService>();
+builder.Services.AddHttpClient<IGeocodeService, AzureMapsGeocodeService>();
 builder.Services.AddHttpClient<IReverseGeocodeService, AzureMapsReverseGeocodeService>();
 builder.Services.AddHttpClient<ITrafficIncidentService, AzureMapsTrafficService>();
 builder.Services.AddHttpClient<IWeatherService, AzureMapsWeatherService>();

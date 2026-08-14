@@ -10,7 +10,7 @@
       "status": {
         "type": "string",
         "enum": ["ok", "needs_input", "no_data", "error"],
-        "description": "ok when live data answered the question. needs_input when required coordinates were missing so no tool was called. no_data when a tool ran but the provider has no coverage or returned nothing. error when a tool failed."
+        "description": "ok when live data answered the question. needs_input when a required input such as a coordinate was missing so no tool was called. no_data when a tool ran but the provider has no coverage or returned nothing. error when a tool failed."
       },
       "summary": {
         "type": "string",
@@ -18,7 +18,7 @@
       },
       "findings": {
         "type": "array",
-        "description": "The individual data points behind the summary. Empty when status is needs_input.",
+        "description": "The individual data points behind the summary. Empty when status is needs_input and no tool ran; when a tool ran and the caller must choose between what it returned, the choices go here.",
         "items": {
           "type": "object",
           "additionalProperties": false,

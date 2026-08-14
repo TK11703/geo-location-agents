@@ -1,8 +1,8 @@
 # ERDC Agents
 
-A geospatial question answering system. A user asks about a point on the ground, four specialist
-agents each answer for the domain they own, and an orchestrator merges those answers into one report
-that states what is known, what is missing, and where it came from.
+A geospatial question answering system. A user asks about a point on the ground, specialist agents
+each answer for the domain they own, and an orchestrator merges those answers into one report that
+states what is known, what is missing, and where it came from.
 
 The .NET 10 Azure Functions application in `src/ERDC.Agents` is the data layer underneath all of
 that. Each endpoint is independent and does exactly one thing: it retrieves data from a single
@@ -11,16 +11,26 @@ serviceable. Every judgment of that kind is made above it, by the agents.
 
 ## How it works
 
-Four specialist agents sit between the orchestrator and the data. Each one owns a domain, holds only
+Five specialist agents sit between the orchestrator and the data. Each one owns a domain, holds only
 the tools for that domain, and returns a fixed JSON report rather than prose. The orchestrator has no
 data of its own and no tools other than the specialists themselves.
 
+Four of them answer questions about a coordinate. The fifth, the place resolver, is the only way to
+obtain one: it turns a written place name or address into latitude and longitude. When a question
+names a place instead of giving numbers, the orchestrator calls the resolver first and alone, then
+fans out to the others with what it returned. Nothing in the system may write a coordinate that no
+tool produced.
+
 ```mermaid
 flowchart LR
-    User(["User question<br/>with coordinates"])
+    User(["User question<br/>naming a place<br/>or giving coordinates"])
 
     subgraph Foundry["Microsoft Foundry"]
         Orch["geo-orchestrator<br/>hosted agent, gpt-4.1<br/>Agent Framework container"]
+
+        subgraph Res["Resolver: called first, alone"]
+            P["place-resolver"]
+        end
 
         subgraph Spec["Specialists: prompt agents, gpt-4-1-mini, strict JSON"]
             W["weather-specialist"]
@@ -32,7 +42,7 @@ flowchart LR
 
     subgraph Gate["Data plane"]
         APIM["API Management<br/>validate-jwt on audience and oid<br/>injects x-functions-key"]
-        Fn["Function app<br/>Flex Consumption<br/>8 HTTP endpoints"]
+        Fn["Function app<br/>Flex Consumption<br/>9 HTTP endpoints"]
     end
 
     subgraph Up["Upstream providers"]
@@ -42,8 +52,10 @@ flowchart LR
     end
 
     User --> Orch
+    Orch -->|"first, only when a place was named"| P
+    P -->|"latitude and longitude"| Orch
     Orch -->|"each specialist is a tool"| W & T & M & L
-    W & T & M & L -->|"OpenAPI tool, managed identity token"| APIM
+    P & W & T & M & L -->|"OpenAPI tool, managed identity token"| APIM
     APIM --> Fn
     Fn --> Maps & NWS & USGS
     Orch -->|"merged answer"| User
@@ -112,9 +124,25 @@ flowchart TB
     Api --> Root
     Root --> Hook
     Defs --> Hook
-    Hook --> Agents["4 specialist agents<br/>Foundry returns the existing<br/>version when nothing changed"]
+    Hook --> Agents["5 prompt agents<br/>Foundry returns the existing<br/>version when nothing changed"]
     OrchSrc --> Sub --> Hosted["geo-orchestrator hosted agent"]
 ```
+
+### Adding an endpoint
+
+The gateway's OpenAPI document is built from `specs/*.json` and embedded in the template with
+`loadTextContent`, so a new path is only real once Bicep has been redeployed. Adding one to an
+existing environment means:
+
+```powershell
+./apim/build-openapi.ps1                              # merge specs/*.json into apim/geo-api.openapi.json
+azd provision                                         # APIM imports the merged document
+./agents/deploy-agents.ps1                            # publish the agent that owns the new tool
+azd deploy geo-orchestrator --cwd orchestrator        # only if the orchestrator changed
+```
+
+`apim/apply-policy.ps1` is not part of this. The policy is applied at API scope rather than per
+operation, so a new operation inherits it without being named anywhere.
 
 ### Deploying into an empty subscription
 
@@ -337,6 +365,33 @@ height, weight, axle weight, dimensions, speed, and cargo properties are omitted
 the Azure Maps request and therefore are not considered when calculating the route.
 An 18-wheeler description alone should not be used to infer dimensions or weight because
 actual configurations vary.
+
+## Place Lookup
+
+### `GET /api/geocode`
+
+Turns a written place name, street address, or landmark into candidate coordinates. This
+is the only endpoint that works in that direction; every other one requires a coordinate
+that already exists.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `query` | Yes | The place name or address to look up, up to 250 characters. |
+| `countryRegion` | No | Two-letter ISO country code to restrict the search. |
+| `top` | No | Number of candidates from 1 to 10. Default: 5. |
+
+```text
+http://localhost:7071/api/geocode?query=Boise,%20Idaho&top=3
+```
+
+`hasMatch` is `false` when Azure Maps returns no candidate, and `candidates` is then
+empty. More than one candidate means the query was ambiguous: dozens of real places are
+called Springfield, and the endpoint does not choose between them. Each candidate carries
+its own `confidence` and `resultType`, and a `resultType` describing an area rather than a
+building means the coordinate is the center of that area.
+
+Coordinates are returned as `latitude` and `longitude` fields rather than a GeoJSON
+position, so there is no `[longitude, latitude]` ordering to get wrong at the caller.
 
 ## Site Data Endpoints
 

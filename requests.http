@@ -11,6 +11,14 @@
 
 GET {{host}}/api/map?city=Seattle&width=640&height=480&zoom=10&mapType=satellite
 
+### Geocode a place name or address into candidate coordinates
+
+GET {{host}}/api/geocode?query=Boise, Idaho&top=3
+
+### Ambiguous place name, expect several candidates
+
+GET {{host}}/api/geocode?query=Springfield&countryRegion=US&top=5
+
 ###
 
 GET {{host}}/api/map?latitude=47.6062&longitude=-122.3321

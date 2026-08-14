@@ -44,7 +44,7 @@ AIAgent agent = projectClient.AsAIAgent(
     model: deployment,
     instructions: OrchestratorInstructions.Text,
     name: "geo-orchestrator",
-    description: "Answers geospatial questions by consulting weather, terrain, mobility, and location specialists.",
+    description: "Answers geospatial questions by resolving a named place to coordinates and then consulting weather, terrain, mobility, and location specialists.",
     tools: specialistTools);
 
 var builder = AgentHost.CreateBuilder(args);

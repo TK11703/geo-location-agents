@@ -1,17 +1,28 @@
 # Geo Orchestrator
 
-A hosted agent that answers geospatial questions by fanning out to the four specialist prompt agents
-and merging their reports into one answer.
+A hosted agent that answers geospatial questions by fanning out to the specialist prompt agents and
+merging their reports into one answer.
 
 Each specialist is registered as a tool rather than called on a fixed schedule, so the model decides
 which domains a question touches and calls those in parallel. The specialists in turn reach the
 backend through API Management, so this agent never talks to the function app directly.
 
+Coordinates are the exception to the fan-out. Every specialist needs a latitude and longitude and
+none of them can look one up, so when the question names a place instead of giving numbers the
+orchestrator calls the place resolver first, on its own, and passes the coordinate it returns to
+whichever specialists the question touches. That first hop is sequential because everything in the
+second hop depends on its result.
+
 ```
 geo-orchestrator (hosted, this project)
+    -> place-resolver (prompt agent)          first, alone, only when a place was named
     -> weather / terrain / mobility / location specialists (prompt agents)
         -> APIM  ->  function app
 ```
+
+A name that matches several real places is not resolved on the user's behalf. The resolver returns
+`needs_input` with the candidates it found, and the orchestrator asks which was meant rather than
+producing an accurate answer about the wrong Springfield.
 
 ## Why this is a separate azd project
 

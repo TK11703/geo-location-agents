@@ -18,7 +18,12 @@ internal static class SourceNotices
             "getSevereWeatherAlerts",
             "Alerts for this point came from the worldwide severe-weather feed rather than the "
             + "United States National Weather Service, so protective instructions and evacuation "
-            + "guidance are not available here.")
+            + "guidance are not available here."),
+        new(
+            "geocodePlace",
+            "The coordinate used for this answer was looked up from the place name you gave, so "
+            + "everything above describes the location the mapping provider matched rather than one "
+            + "you confirmed.")
     ];
 
     public static void AddFrom(string? report, ISet<string> notices)

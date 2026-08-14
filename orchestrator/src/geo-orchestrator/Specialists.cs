@@ -10,6 +10,15 @@ internal static class Specialists
     public static readonly IReadOnlyList<Specialist> All =
     [
         new(
+            "place-resolver",
+            "resolve_place_to_coordinates",
+            """
+            The latitude and longitude of a written place name, street address, or landmark. This is
+            the only way to obtain a coordinate; every other specialist requires one and none of them
+            can look one up. Call this first whenever the user names a place instead of giving
+            numbers.
+            """),
+        new(
             "weather-specialist",
             "ask_weather_specialist",
             """

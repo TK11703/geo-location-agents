@@ -5,6 +5,7 @@ namespace ERDC.Agents.Tests.Orchestrator;
 public class SourceNoticesTests
 {
     private const string WorldwideFeed = "worldwide severe-weather feed";
+    private const string LookedUpCoordinate = "looked up from the place name";
 
     private static string Report(params string[] sources) =>
         $$"""
@@ -98,5 +99,23 @@ public class SourceNoticesTests
     public void Reports_nothing_for_an_empty_result(string? report)
     {
         Assert.Empty(NoticesFor(report!));
+    }
+
+    [Fact]
+    public void Reports_a_looked_up_coordinate_when_the_resolver_answered()
+    {
+        var notices = NoticesFor(Report("geo_place_geocodePlace"));
+
+        Assert.Contains(notices, notice => notice.Contains(LookedUpCoordinate, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// A coordinate the user typed carries no such caveat, so the notice must follow the resolver
+    /// having run rather than the question having named a place.
+    /// </summary>
+    [Fact]
+    public void Reports_nothing_when_no_place_was_resolved()
+    {
+        Assert.Empty(NoticesFor(Report("geo_terrain_getElevation")));
     }
 }

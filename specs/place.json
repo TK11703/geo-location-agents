@@ -1,0 +1,118 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Place Resolver Data Feed",
+    "description": "Turns a written place name or street address into candidate latitude and longitude coordinates. This is the only operation in the system that works in that direction; every other service requires coordinates that already exist.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/geocode": {
+      "get": {
+        "operationId": "geocodePlace",
+        "summary": "Find the coordinates for a place name or address",
+        "description": "Searches for a written place name, address, or landmark and returns the matching locations with their latitude and longitude. A single query can match many real places, so the response is a list of candidates ordered best first, each with its own confidence and match type. Read hasMatch before quoting any coordinate, and compare the candidates before treating the first one as the answer.",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "description": "The place name, street address, or landmark to look up, written the way a person would say it, for example Boise, Idaho or 1600 Pennsylvania Avenue NW, Washington DC.",
+            "schema": { "type": "string", "maxLength": 250 }
+          },
+          {
+            "name": "countryRegion",
+            "in": "query",
+            "required": false,
+            "description": "Optional two-letter ISO country code that restricts the search to one country, for example US. Send this only when the user named the country, never to guess at which of several matches they meant.",
+            "schema": { "type": "string", "minLength": 2, "maxLength": 2 }
+          },
+          {
+            "name": "top",
+            "in": "query",
+            "required": false,
+            "description": "How many candidate locations to return, between 1 and 10. Defaults to 5. Leave the default in place so that an ambiguous name is visibly ambiguous rather than silently reduced to one answer.",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 10, "default": 5 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The search completed. Check hasMatch before quoting a coordinate, and check how many candidates came back before treating one as the answer.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/GeocodeResult" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/InvalidRequest" },
+          "502": { "$ref": "#/components/responses/UpstreamFailure" },
+          "503": { "$ref": "#/components/responses/NotConfigured" }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "InvalidRequest": {
+        "description": "The request parameters were missing or invalid. The detail field explains what to correct.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+        }
+      },
+      "UpstreamFailure": {
+        "description": "The upstream mapping provider could not complete the request.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+        }
+      },
+      "NotConfigured": {
+        "description": "The mapping service is not configured on the server and cannot answer requests.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+        }
+      }
+    },
+    "schemas": {
+      "ProblemDetails": {
+        "type": "object",
+        "description": "A machine readable description of a failed request.",
+        "properties": {
+          "status": { "type": "integer", "description": "The HTTP status code." },
+          "title": { "type": "string", "description": "A short summary of the problem type." },
+          "detail": { "type": "string", "description": "An explanation of what went wrong and how to correct it." }
+        }
+      },
+      "GeocodeResult": {
+        "type": "object",
+        "description": "The candidate locations that match a written place name or address.",
+        "properties": {
+          "query": { "type": "string", "description": "The place name or address that was searched for, exactly as it was sent." },
+          "hasMatch": {
+            "type": "boolean",
+            "description": "True when at least one location was found. When false, the candidates list is empty and no coordinate exists for this query. Say that the place could not be found rather than offering a coordinate from any other source."
+          },
+          "candidates": {
+            "type": "array",
+            "description": "The matching locations, best match first. More than one entry means the query was ambiguous and the provider could not tell which place was meant.",
+            "items": { "$ref": "#/components/schemas/GeocodeCandidate" }
+          }
+        }
+      },
+      "GeocodeCandidate": {
+        "type": "object",
+        "description": "One real place that matches the query, with the coordinate that represents it.",
+        "properties": {
+          "latitude": { "type": "number", "description": "Latitude of this candidate in decimal degrees." },
+          "longitude": { "type": "number", "description": "Longitude of this candidate in decimal degrees." },
+          "formattedAddress": { "type": "string", "description": "The complete address or place name as a single display ready line. Use this to tell candidates apart." },
+          "locality": { "type": "string", "description": "The city, town, or neighborhood name." },
+          "countryCode": { "type": "string", "description": "The ISO country code." },
+          "resultType": {
+            "type": "string",
+            "description": "What kind of feature the coordinate represents, for example Point Address, Street, or Geography. A Geography match is the center of an area such as a city or county, not a specific building, so the coordinate stands for the whole area."
+          },
+          "confidence": { "type": "string", "description": "How confident the provider is in this match, one of High, Medium, or Low." }
+        }
+      }
+    }
+  }
+}

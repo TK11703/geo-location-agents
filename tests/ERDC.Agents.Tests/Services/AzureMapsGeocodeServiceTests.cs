@@ -43,8 +43,10 @@ public class AzureMapsGeocodeServiceTests
         Assert.False(query.ContainsKey("countryRegion"));
     }
 
+    // Azure Maps answers a free-form query with countryRegion attached with a 400, not a filtered
+    // result, so sending it at all takes the endpoint down for every restricted search.
     [Fact]
-    public async Task GetCoordinatesAsync_WithCountryRegion_SendsIt()
+    public async Task GetCoordinatesAsync_WithCountryRegion_DoesNotSendItUpstream()
     {
         var handler = new RecordingHandler(JsonResponse(MatchJson));
         var service = CreateService(handler);
@@ -52,8 +54,45 @@ public class AzureMapsGeocodeServiceTests
         await service.GetCoordinatesAsync(new GeocodeQuery("Springfield", "US", 3), CancellationToken.None);
 
         var query = QueryHelpers.ParseQuery(handler.Requests.Single().Uri.Query);
-        Assert.Equal("US", query["countryRegion"]);
+        Assert.False(query.ContainsKey("countryRegion"));
         Assert.Equal("3", query["top"]);
+    }
+
+    [Fact]
+    public async Task GetCoordinatesAsync_WithCountryRegion_DropsCandidatesElsewhere()
+    {
+        const string json = """
+        {
+          "features": [
+            {
+              "geometry": { "coordinates": [-89.6501, 39.7817] },
+              "properties": {
+                "address": {
+                  "formattedAddress": "Springfield, IL",
+                  "countryRegion": { "ISO": "US" }
+                }
+              }
+            },
+            {
+              "geometry": { "coordinates": [-1.1743, 51.9912] },
+              "properties": {
+                "address": {
+                  "formattedAddress": "Springfield, England",
+                  "countryRegion": { "ISO": "GB" }
+                }
+              }
+            }
+          ]
+        }
+        """;
+        var service = CreateService(new RecordingHandler(JsonResponse(json)));
+
+        var result = await service.GetCoordinatesAsync(
+            new GeocodeQuery("Springfield", "US", 5),
+            CancellationToken.None);
+
+        var candidate = Assert.Single(result.Candidates);
+        Assert.Equal("Springfield, IL", candidate.FormattedAddress);
     }
 
     [Fact]

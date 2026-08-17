@@ -171,6 +171,11 @@ Set-AzdValue APIM_PUBLISHER_EMAIL $ApimPublisherEmail $repoRoot
 Set-AzdValue APIM_SKU $ApimSku $repoRoot
 if ($GeoApiAudience) { Set-AzdValue GEO_API_AUDIENCE $GeoApiAudience $repoRoot }
 
+# azd validates the required Bicep parameters before it runs preprovision, so geoApiAudience has to
+# exist by now even though the hook is what produces it. Running the hook here fills it in; the hook
+# itself then finds it already set and leaves the app registration alone.
+& (Join-Path $PSScriptRoot 'Initialize-AzdEnvironment.ps1')
+
 if ($ConfigureOnly) {
     Write-Step 'Configured. Nothing provisioned because -ConfigureOnly was given.'
     "Review with: azd env get-values"
@@ -195,7 +200,8 @@ if ($SkipOrchestrator) {
 
 Write-Step "Configuring azd environment '$OrchestratorEnvironmentName' from the backend outputs"
 
-$config = & (Join-Path $PSScriptRoot 'Get-AzdConfig.ps1') -Require FOUNDRY_PROJECT_ENDPOINT, ORCHESTRATOR_MODEL
+$config = & (Join-Path $PSScriptRoot 'Get-AzdConfig.ps1') -Require FOUNDRY_PROJECT_ENDPOINT, ORCHESTRATOR_MODEL,
+    FOUNDRY_RESOURCE_GROUP, FOUNDRY_ACCOUNT_NAME, FOUNDRY_PROJECT_NAME
 
 # Deploying the orchestrator makes azd record the account, the project id, the model deployments,
 # and the published agent version in this environment. An environment left over from a different
@@ -206,6 +212,15 @@ Initialize-AzdEnv -Name $OrchestratorEnvironmentName -Cwd $orchestratorRoot `
 
 Set-AzdValue FOUNDRY_PROJECT_ENDPOINT $config['FOUNDRY_PROJECT_ENDPOINT'] $orchestratorRoot
 Set-AzdValue AZURE_AI_MODEL_DEPLOYMENT_NAME $config['ORCHESTRATOR_MODEL'] $orchestratorRoot
+
+# The Foundry provider only derives this itself when it is the one that created the project. Because
+# `endpoint` above points it at a project the root Bicep already owns, it resolves the deploy target
+# from this arm id instead, and fails outright when it is missing.
+Set-AzdValue AZURE_AI_PROJECT_ID (
+    "/subscriptions/$SubscriptionId/resourceGroups/$($config['FOUNDRY_RESOURCE_GROUP'])" +
+    "/providers/Microsoft.CognitiveServices/accounts/$($config['FOUNDRY_ACCOUNT_NAME'])" +
+    "/projects/$($config['FOUNDRY_PROJECT_NAME'])"
+) $orchestratorRoot
 
 Write-Step 'Deploying the orchestrator'
 

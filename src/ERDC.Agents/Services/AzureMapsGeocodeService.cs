@@ -15,14 +15,15 @@ public sealed class AzureMapsGeocodeService(HttpClient httpClient, IConfiguratio
         GeocodeQuery query,
         CancellationToken cancellationToken)
     {
+        // Azure Maps rejects countryRegion outright when it is sent alongside a free-form query, so
+        // the restriction is applied to the candidates below instead of upstream.
         var uri = QueryHelpers.AddQueryString(
             $"{GetEndpoint()}/geocode",
             new Dictionary<string, string?>
             {
                 ["api-version"] = GeocodingApiVersion,
                 ["query"] = query.Text,
-                ["top"] = query.Top.ToString(CultureInfo.InvariantCulture),
-                ["countryRegion"] = query.CountryRegion
+                ["top"] = query.Top.ToString(CultureInfo.InvariantCulture)
             });
 
         using var message = CreateRequest(uri);
@@ -47,7 +48,7 @@ public sealed class AzureMapsGeocodeService(HttpClient httpClient, IConfiguratio
         var candidates = new List<GeocodeCandidate>(features.GetArrayLength());
         foreach (var feature in features.EnumerateArray())
         {
-            if (ReadCandidate(feature) is { } candidate)
+            if (ReadCandidate(feature) is { } candidate && IsInCountry(candidate, query.CountryRegion))
             {
                 candidates.Add(candidate);
             }
@@ -55,6 +56,13 @@ public sealed class AzureMapsGeocodeService(HttpClient httpClient, IConfiguratio
 
         return new GeocodeResult(query.Text, candidates.Count > 0, candidates);
     }
+
+    // A candidate whose country the provider did not report is kept rather than guessed at, so the
+    // filter only ever removes places it can positively place somewhere else.
+    private static bool IsInCountry(GeocodeCandidate candidate, string? countryRegion) =>
+        string.IsNullOrEmpty(countryRegion)
+        || candidate.CountryCode is null
+        || string.Equals(candidate.CountryCode, countryRegion, StringComparison.OrdinalIgnoreCase);
 
     // A feature without a usable position is dropped rather than reported as a candidate the caller
     // cannot act on.

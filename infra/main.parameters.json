@@ -12,6 +12,7 @@
     "azureMapsEndpoint": { "value": "${AZURE_MAPS_ENDPOINT}" },
     "aiServicesDomain": { "value": "${AI_SERVICES_DOMAIN}" },
     "modelDeploymentSku": { "value": "${MODEL_DEPLOYMENT_SKU}" },
+    "resourceTokenSalt": { "value": "${AZD_RESOURCE_TOKEN_SALT}" },
     "nwsUserAgent": { "value": "${NWS_USER_AGENT}" },
     "apimSku": { "value": "${APIM_SKU=Developer}" },
     "apimPublisherName": { "value": "${APIM_PUBLISHER_NAME=ERDC Agents}" },

@@ -66,6 +66,14 @@ param aiServicesDomain string = ''
 @description('SKU for both model deployments. Empty resolves it from the cloud being deployed to.')
 param modelDeploymentSku string = ''
 
+// Foundry keeps agent records, and the Entra agent identities they point at, keyed to the account's
+// subdomain. Deleting the account does not clear them, so a rebuilt environment that lands on the
+// same name inherits agent versions whose identities the teardown already deleted, and every
+// invocation fails with 'Agent Identity Blueprint has been deleted or disabled'. The salt is
+// generated once per environment and keeps each rebuild on a subdomain of its own.
+@description('Per-environment entropy for resource names. Set once when the environment is created; changing it renames every resource.')
+param resourceTokenSalt string = ''
+
 var azureMapsEndpointByCloud = {
   AzureCloud: 'https://atlas.microsoft.com'
   AzureUSGovernment: 'https://atlas.azure.us'
@@ -93,7 +101,7 @@ var tags = {
 }
 
 // Names are derived rather than supplied, so a fresh environment needs only the inputs above.
-var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
+var resourceToken = toLower(uniqueString(subscription().id, environmentName, location, resourceTokenSalt))
 var namePrefix = toLower(replace(environmentName, '_', '-'))
 var alphaPrefix = take(replace(namePrefix, '-', ''), 9)
 

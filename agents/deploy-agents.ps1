@@ -21,8 +21,8 @@
 
 .PARAMETER ReadyTimeoutMinutes
     How long to wait for the project to start answering on the Agents endpoint before giving up.
-    On a freshly provisioned account this lags the capability host reaching Succeeded in ARM by a
-    long way, and until it catches up every request returns 404 'Project not found'.
+    On a freshly provisioned account this lags the ARM deployment by a long way, and until it
+    catches up every request returns 404 'Project not found'.
 
 .EXAMPLE
     ./agents/deploy-agents.ps1
@@ -95,9 +95,9 @@ function Get-FoundryHeaders {
 $headers = Get-FoundryHeaders
 
 # A new account's project is not routable on the Agents endpoint the moment provisioning finishes.
-# The capability host reports Succeeded in ARM well before the Agents backend picks the project up,
-# and until it does every request here answers 404 'Project not found'. Waiting is the difference
-# between this running as an azd postdeploy hook and having to rerun it by hand later.
+# ARM reports Succeeded well before the Agents backend picks the project up, and until it does every
+# request here answers 404 'Project not found'. Waiting is the difference between this running as an
+# azd postdeploy hook and having to rerun it by hand later.
 $deadline = (Get-Date).AddMinutes($ReadyTimeoutMinutes)
 while ($true) {
     try {
@@ -107,7 +107,7 @@ while ($true) {
     catch {
         if ($_.Exception.Response.StatusCode.value__ -ne 404) { throw }
         if ((Get-Date) -ge $deadline) {
-            throw "$($config.FOUNDRY_PROJECT_ENDPOINT) still reports 'Project not found' after $ReadyTimeoutMinutes minutes. Check that the account's 'agents' capability host exists and has provisioningState Succeeded."
+            throw "$($config.FOUNDRY_PROJECT_ENDPOINT) still reports 'Project not found' after $ReadyTimeoutMinutes minutes. Check that the account and project exist and that FOUNDRY_PROJECT_ENDPOINT points at them."
         }
         "  {0}  waiting for the project to become available on the Agents endpoint" -f (Get-Date -Format HH:mm:ss)
         Start-Sleep -Seconds 30

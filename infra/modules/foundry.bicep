@@ -132,22 +132,6 @@ resource specialistModel 'Microsoft.CognitiveServices/accounts/deployments@2025-
   ]
 }
 
-// The Agents data plane does not recognise the project until this exists; without it every call to
-// /api/projects/{project}/agents answers "Project not found". enablePublicHostingEnvironment is
-// what lets the hosted orchestrator run when no virtual network is supplied. Takes ~15 minutes.
-resource agentsCapabilityHost 'Microsoft.CognitiveServices/accounts/capabilityHosts@2025-10-01-preview' = {
-  parent: account
-  name: 'agents'
-  properties: {
-    capabilityHostKind: 'Agents'
-    enablePublicHostingEnvironment: true
-  }
-  dependsOn: [
-    project
-    specialistModel
-  ]
-}
-
 resource deployerFoundryUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(deployerPrincipalId)) {
   scope: account
   name: guid(account.id, deployerPrincipalId, foundryUser)

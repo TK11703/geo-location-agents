@@ -10,7 +10,10 @@
          app and its service principal must exist in the tenant before the policy is deployed.
          Entra objects are not ARM resources, so this cannot live in Bicep.
 
-      2. Fails before anything is provisioned when a required value is missing, rather than 40
+      2. Mints the salt that keeps this environment's resource names, and so the Foundry
+         subdomain, distinct from any previous build of the same environment name.
+
+      3. Fails before anything is provisioned when a required value is missing, rather than 40
          minutes in when API Management is already half built.
 
     Rerunning is safe. An existing app registration is reused; nothing is recreated.
@@ -54,6 +57,15 @@ if ($missing.Count -gt 0) {
 # an empty string overrides a default rather than falling back to it.
 if ([string]::IsNullOrWhiteSpace($config['AZURE_RESOURCE_GROUP'])) {
     Set-AzdValue AZURE_RESOURCE_GROUP "rg-$envName"
+}
+
+# Foundry keeps agent records, and the Entra agent identities they point at, keyed to the account's
+# subdomain, and purging the account does not clear them. A rebuild that lands on the same subdomain
+# inherits agent versions whose identities the teardown deleted, and every invocation then fails
+# with 'Agent Identity Blueprint has been deleted or disabled'. Minted once and kept for the life of
+# the environment, so reprovisioning is still idempotent; a torn-down environment gets a new one.
+if ([string]::IsNullOrWhiteSpace($config['AZD_RESOURCE_TOKEN_SALT'])) {
+    Set-AzdValue AZD_RESOURCE_TOKEN_SALT ([guid]::NewGuid().ToString('N').Substring(0, 8))
 }
 
 if (-not [string]::IsNullOrWhiteSpace($config['GEO_API_AUDIENCE'])) {

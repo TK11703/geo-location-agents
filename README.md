@@ -560,7 +560,10 @@ These are already covered by the existing endpoints. Use
 `GET /api/route?travelMode=truck&output=details` with and without a `vehicleSpec` to
 compare a truck-legal path against an unrestricted one.
 
-## Prerequisites
+## Prerequisites For Local Development
+
+These cover running the function host on your machine. Deploying needs a different set; see
+[Deploying To Azure](#deploying-to-azure).
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 - [Azure Functions Core Tools v4](https://learn.microsoft.com/azure/azure-functions/functions-run-local)
@@ -599,6 +602,69 @@ dotnet test .\ERDC.Agents.slnx
 ```
 
 The tests mock upstream HTTP responses and do not require credentials or network calls.
+
+## Deploying To Azure
+
+[scripts/New-Deployment.ps1](scripts/New-Deployment.ps1) stands the whole system up in an empty
+subscription, and [scripts/Remove-Deployment.ps1](scripts/Remove-Deployment.ps1) takes it back down.
+Both are safe to rerun.
+
+### Required tools
+
+| Tool | Needed for | Checked by the scripts |
+|------|------------|------------------------|
+| PowerShell 7+ | Both scripts, and the azd hooks, which declare `shell: pwsh` | No |
+| [Azure Developer CLI](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd) | Provisioning and teardown | Yes |
+| [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) | The preprovision and postdeploy hooks, which call `az` rather than `azd` | Yes |
+| [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) | `dotnet publish` of the function app and the orchestrator, both built locally and zipped | No |
+| azd extensions `azure.ai.agents` and `microsoft.foundry` | The orchestrator only | No |
+
+Install the extensions from the default azd registry. No alpha feature flag is needed:
+
+```powershell
+azd extension install azure.ai.agents
+azd extension install microsoft.foundry
+```
+
+The scripts stop immediately if `azd` or `az` is missing. The rest fail later and less obviously, so
+confirm them first. `pwsh` must be on `PATH` even when the script is launched from Windows
+PowerShell, because the hooks spawn it by name. The last three are needed only by the orchestrator
+step, so `-SkipOrchestrator` drops all of them; teardown never needs them at all.
+
+Nothing from the local development list is required. Deployment uses zip deploy rather than Core
+Tools, and provisions its own Azure Maps account.
+
+### Required permissions
+
+- **Entra.** The preprovision hook creates an app registration for the gateway audience, which needs
+  the Application Developer role or equivalent. Tenants that do not grant it can pass
+  `-GeoApiAudience` to reuse an existing registration. Teardown deletes app registrations, service
+  principals, and the agent identity blueprints Foundry creates per agent, so it needs the same
+  rights.
+- **Subscription.** The template assigns roles, so Contributor alone is not enough. Use Owner, or
+  Contributor together with User Access Administrator.
+
+### Running them
+
+```powershell
+./scripts/New-Deployment.ps1 -TenantId <tenant-id> -SubscriptionId <subscription-id> `
+    -NwsUserAgent 'ERDC.Agents (you@example.com)' -ApimPublisherEmail you@example.com `
+    -ApimSku Basicv2
+```
+
+`-ApimSku Basicv2` provisions in minutes; the default Developer tier takes 30 to 45. Sign-in,
+environment setup, provisioning, and agent publishing all happen in one pass. Use `-ConfigureOnly`
+to stop before anything is provisioned, or `-SkipOrchestrator` to deploy everything except the
+hosted orchestrator.
+
+```powershell
+./scripts/Remove-Deployment.ps1
+```
+
+Teardown defaults to the currently selected azd environment and prompts before deleting. Add
+`-WhatIf` to preview it, or `-Force` to skip the prompt. It removes what `azd down` leaves behind:
+Entra objects, soft-deleted Cognitive Services and API Management instances, and both local azd
+environments.
 
 ## Configuration
 

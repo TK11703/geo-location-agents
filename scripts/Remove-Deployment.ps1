@@ -4,31 +4,33 @@
     and both local azd environments.
 
 .DESCRIPTION
-    `azd down` is most of a teardown but not all of one. Five things sit outside what it removes:
+    `azd down` is most of a teardown but not all of one. Four things sit outside what it removes:
 
-      1. The Foundry Agents capability host. This one has to go first, before `azd down` rather
-         than after it: the record lives in the Agents backend keyed by account name, so purging
-         the Cognitive Services account does not take it with it. `azd down` reports success while
-         the host is still deleting, and the next deployment then fails within a second on
-         "Capability Host agents is currently in non creating, retry after its complete" because
-         the regenerated account name collides with the one still going away.
-      2. The Entra app registration the preprovision hook creates, and the agent identity blueprints
+      1. The Entra app registration the preprovision hook creates, and the agent identity blueprints
          and principals Foundry creates for each published agent. Entra objects are not ARM
          resources, so no deployment owns them and `azd down` never sees them. The agent identities
          are the ones that accumulate: a fresh set of three objects per agent, every deployment.
-      3. The orchestrator's azd environment. Its hosted agent lives inside the Foundry project the
+      2. The orchestrator's azd environment. Its hosted agent lives inside the Foundry project the
          root project owns, so the agent goes away with the resource group; what is left behind is
          a local environment naming an account that no longer exists, which the next deployment
          would otherwise reuse.
-      4. Soft-deleted Cognitive Services accounts and API Management instances. `azd down --purge`
+      3. Soft-deleted Cognitive Services accounts and API Management instances. `azd down --purge`
          normally clears both, and this verifies it did.
-      5. The root azd environment itself, which still holds the resource ids of what was just
+      4. The root azd environment itself, which still holds the resource ids of what was just
          deleted.
 
-    Purging matters here rather than being tidiness. Resource names derive from
-    uniqueString(subscription, environment name, location), so redeploying the same environment
-    name into the same region regenerates the same names and collides with the soft-deleted ones,
-    and a soft-deleted Foundry account goes on holding its model-deployment quota until it is gone.
+    Deleting the Foundry Agents capability host, which happens first, is now a compatibility path.
+    Environments provisioned before the capability host was removed from infra/modules/foundry.bicep
+    still have one, and it has to go before `azd down` rather than after: the record lives in the
+    Agents backend keyed by account name, so purging the Cognitive Services account does not take it
+    with it. Current deployments have none, and the step says so and moves on.
+
+    Purging matters for quota rather than tidiness: a soft-deleted Foundry account goes on holding
+    its model-deployment quota until it is gone. Colliding names are no longer the second reason
+    they once were, because resource names derive from uniqueString(subscription, environment name,
+    location, salt) and the salt is minted per environment and goes away with it. Under
+    -KeepEnvironmentFiles the salt survives, so a redeploy does regenerate the same names and would
+    collide with anything left soft-deleted.
 
     Rerunning is safe. Anything already deleted is reported and skipped, so this can be used to
     finish a teardown that failed partway through.
@@ -48,7 +50,7 @@
 .PARAMETER CapabilityHostTimeoutMinutes
     How long to wait for the Agents capability host to finish deleting before giving up and
     tearing down the rest anyway. Deletion has been observed taking anywhere from three minutes to
-    over an hour.
+    over an hour. Applies only to environments old enough to have a capability host.
 
 .PARAMETER Force
     Skips the confirmation prompt.

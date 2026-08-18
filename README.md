@@ -1,10 +1,10 @@
-# ERDC Agents
+# Geo-Location Agents
 
 A geospatial question answering system. A user asks about a point on the ground, specialist agents
 each answer for the domain they own, and an orchestrator merges those answers into one report that
 states what is known, what is missing, and where it came from.
 
-The .NET 10 Azure Functions application in `src/ERDC.Agents` is the data layer underneath all of
+The .NET 10 Azure Functions application in `functionapp/src/geo-location-function-app` is the data layer underneath all of
 that. Each endpoint is independent and does exactly one thing: it retrieves data from a single
 upstream source and returns it. Nothing in this application decides whether a site is reachable or
 serviceable. Every judgment of that kind is made above it, by the agents.
@@ -109,7 +109,7 @@ postdeploy hook so they are never pointed at a gateway that has no code behind i
 flowchart TB
     subgraph Repo["Repository"]
         Infra["infra/*.bicep"]
-        Api["src/ERDC.Agents"]
+        Api["functionapp/src/<br/>geo-location-function-app"]
         Defs["agents/*.md<br/>report-schema.json<br/>specs/*.json"]
         OrchSrc["orchestrator/src/geo-orchestrator"]
     end
@@ -161,7 +161,7 @@ both azd environments, and both projects in the order they depend on each other:
 ./scripts/New-Deployment.ps1 `
     -TenantId <tenant-id> `
     -SubscriptionId <subscription-id> `
-    -NwsUserAgent 'ERDC.Agents (you@example.com)' `
+    -NwsUserAgent 'GeoLocation (you@example.com)' `
     -ApimPublisherEmail you@example.com
 ```
 
@@ -175,7 +175,7 @@ different subscription or tenant means different arguments rather than a changed
 | Subscription | `-SubscriptionId` | required |
 | NWS contact string | `-NwsUserAgent` | required; the National Weather Service blocks callers that omit it |
 | APIM notification address | `-ApimPublisherEmail` | required by the ARM resource |
-| Environment name | `-EnvironmentName` | `erdc-agents-dev` |
+| Environment name | `-EnvironmentName` | `geo-agents-dev` |
 | Region | `-Location` | `eastus` |
 | Cloud | `-Cloud` | `AzureCloud` |
 | Resource group | `-ResourceGroupName` | `rg-<environment name>` |
@@ -225,7 +225,7 @@ derived from `aiServicesDomain`, so they follow it without a second setting:
 ./scripts/New-Deployment.ps1 `
     -TenantId <tenant-id> `
     -SubscriptionId <subscription-id> `
-    -NwsUserAgent 'ERDC.Agents (you@example.com)' `
+    -NwsUserAgent 'GeoLocation (you@example.com)' `
     -ApimPublisherEmail you@example.com `
     -Cloud AzureUSGovernment `
     -Location usgovvirginia
@@ -249,7 +249,7 @@ soft-deleted Foundry account and API Management instance, which otherwise keep t
 and their model quota allocated against a redeploy of the same environment name.
 
 ```powershell
-./scripts/Remove-Deployment.ps1 -EnvironmentName erdc-agents-dev
+./scripts/Remove-Deployment.ps1 -EnvironmentName geo-agents-dev
 ```
 
 It prompts before deleting anything; `-WhatIf` reports the target and stops, and `-Force` skips the
@@ -572,14 +572,15 @@ These cover running the function host on your machine. Deploying needs a differe
 
 ## Run Locally
 
-1. Copy `src/ERDC.Agents/local.settings.example.json` to `src/ERDC.Agents/local.settings.json`.
+1. Copy `functionapp/src/geo-location-function-app/local.settings.example.json` to
+  `functionapp/src/geo-location-function-app/local.settings.json`.
 2. Replace `your-azure-maps-subscription-key` with an Azure Maps subscription key, and
   replace the contact address in `Nws__UserAgent` with your own.
 3. Start Azurite.
 4. Build and start the function host:
 
 ```powershell
-Set-Location .\src\ERDC.Agents
+Set-Location .\functionapp\src\geo-location-function-app
 dotnet run
 ```
 
@@ -597,8 +598,8 @@ Management and added on the last hop, so the agents that call these endpoints ne
 ## Build And Test
 
 ```powershell
-dotnet build .\ERDC.Agents.slnx
-dotnet test .\ERDC.Agents.slnx
+dotnet build .\GeoLocation.slnx
+dotnet test .\GeoLocation.slnx
 ```
 
 The tests mock upstream HTTP responses and do not require credentials or network calls.
@@ -648,7 +649,7 @@ Tools, and provisions its own Azure Maps account.
 
 ```powershell
 ./scripts/New-Deployment.ps1 -TenantId <tenant-id> -SubscriptionId <subscription-id> `
-    -NwsUserAgent 'ERDC.Agents (you@example.com)' -ApimPublisherEmail you@example.com `
+    -NwsUserAgent 'GeoLocation (you@example.com)' -ApimPublisherEmail you@example.com `
     -ApimSku Basicv2
 ```
 
@@ -682,9 +683,9 @@ Do not commit `local.settings.json`. The key is sent to Azure Maps in the `subsc
 
 ```powershell
 $env:AzureMaps__SubscriptionKey = "<your-key>"
-$env:Nws__UserAgent = "ERDC.Agents (<your-contact>)"
+$env:Nws__UserAgent = "GeoLocation (<your-contact>)"
 $env:Nws__Endpoint = "https://api.weather.gov"
-dotnet run --project .\src\ERDC.Agents
+dotnet run --project .\functionapp\src\geo-location-function-app
 ```
 
 For a deployed Function App, these settings are applied by the Bicep template. `AzureMaps__SubscriptionKey` is read from the Azure Maps account the template creates, so no Maps key is stored in configuration or in the azd environment, `Nws__UserAgent` comes from `NWS_USER_AGENT` in the azd environment, and `Nws__Endpoint` defaults to `https://api.weather.gov` in Bicep. They are not carried over from `local.settings.json` or user secrets. A missing setting is logged by the function and returns `503 Service Unavailable` without exposing configuration details to the caller.

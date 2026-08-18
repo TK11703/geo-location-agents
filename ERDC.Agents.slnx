@@ -1,4 +1,0 @@
-<Solution>
-  <Project Path="src/ERDC.Agents/ERDC.Agents.csproj" />
-  <Project Path="tests/ERDC.Agents.Tests/ERDC.Agents.Tests.csproj" />
-</Solution>

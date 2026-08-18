@@ -40,7 +40,7 @@ param nwsUserAgent string
 ])
 param apimSku string = 'Developer'
 
-param apimPublisherName string = 'ERDC Agents'
+param apimPublisherName string = 'Geo-Location Agents'
 
 @minLength(1)
 @description('Address API Management sends service notifications to.')

@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <RootNamespace>ERDC.Agents.Orchestrator</RootNamespace>
+    <RootNamespace>GeoLocation.Orchestrator</RootNamespace>
     <AssemblyName>geo-orchestrator</AssemblyName>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -17,7 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="ERDC.Agents.Tests" />
+    <InternalsVisibleTo Include="GeoLocation.Tests" />
   </ItemGroup>
 
 </Project>

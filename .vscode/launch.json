@@ -10,7 +10,7 @@
                 "host",
                 "start"
             ],
-            "cwd": "${workspaceFolder}/src/ERDC.Agents/bin/Debug/net10.0",
+            "cwd": "${workspaceFolder}/functionapp/src/geo-location-function-app/bin/Debug/net10.0",
             "preLaunchTask": "build (functions)",
             "console": "integratedTerminal",
             "stopAtEntry": false

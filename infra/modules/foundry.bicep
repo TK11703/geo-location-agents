@@ -6,7 +6,7 @@ param accountName string
 param projectName string
 param location string
 
-param projectDisplayName string = 'ERDC Agents'
+param projectDisplayName string = 'Geo-Location Agents'
 param projectDescription string = 'Geospatial specialist and orchestrator agents.'
 
 @description('Deployment the orchestrator runs on.')

@@ -3,9 +3,9 @@
 # Owns the backend function app and the APIM geo API. The orchestrator agent is a separate azd
 # project under orchestrator/, because that one uses the microsoft.foundry infrastructure provider
 # and so cannot also emit the custom Bicep this side needs.
-name: erdc-agents
+name: geo-agents
 metadata:
-  template: erdc-agents@1.0.0
+  template: geo-agents@1.0.0
 
 infra:
   provider: bicep
@@ -13,7 +13,7 @@ infra:
 
 services:
   api:
-    project: src/ERDC.Agents
+    project: functionapp/src/geo-location-function-app
     language: dotnet
     host: function
 

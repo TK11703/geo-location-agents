@@ -37,7 +37,7 @@ function Convert-NullableType {
 $merged = [ordered]@{
     openapi = '3.0.3'
     info    = [ordered]@{
-        title       = 'ERDC Agents Geo API'
+        title       = 'Geo-Location Agents API'
         version     = '1.0.0'
         description = 'Weather, terrain, mobility, and location endpoints consumed by Foundry specialist agents.'
     }

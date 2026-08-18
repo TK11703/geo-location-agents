@@ -64,7 +64,7 @@
 
 .EXAMPLE
     # Tear down an environment whose local .azure folder is already gone.
-    ./scripts/Remove-Deployment.ps1 -EnvironmentName erdc-agents-dev -SubscriptionId <subscription-id> -Force
+    ./scripts/Remove-Deployment.ps1 -EnvironmentName geo-agents-dev -SubscriptionId <subscription-id> -Force
 #>
 [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
 param(

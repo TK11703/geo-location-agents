@@ -1,4 +1,4 @@
-namespace ERDC.Agents.Orchestrator;
+namespace GeoLocation.Orchestrator;
 
 internal static class OrchestratorInstructions
 {

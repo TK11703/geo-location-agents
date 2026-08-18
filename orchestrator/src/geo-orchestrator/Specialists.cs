@@ -1,4 +1,4 @@
-namespace ERDC.Agents.Orchestrator;
+namespace GeoLocation.Orchestrator;
 
 /// <summary>What a specialist's tool takes from the orchestrator model.</summary>
 internal enum SpecialistInput

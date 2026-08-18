@@ -1,5 +1,5 @@
 <!--
-  API-level policy for the ERDC Agents geo API.
+  API-level policy for the Geo-Location Agents geo API.
   Chain: Foundry agent (system-assigned MI) -> APIM (token validated here) -> function app.
 
   Values come from APIM named values so this file carries no secrets, tenant-specific IDs, or

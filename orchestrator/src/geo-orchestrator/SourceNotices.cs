@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace ERDC.Agents.Orchestrator;
+namespace GeoLocation.Orchestrator;
 
 /// <summary>A limitation that follows from which tool answered rather than from what it said.</summary>
 internal sealed record SourceNotice(string ToolName, string Text);

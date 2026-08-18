@@ -39,17 +39,17 @@
 
 .EXAMPLE
     ./scripts/New-Deployment.ps1 -TenantId <tenant-id> -SubscriptionId <subscription-id> `
-        -NwsUserAgent 'ERDC.Agents (you@example.com)' -ApimPublisherEmail you@example.com
+        -NwsUserAgent 'GeoLocation (you@example.com)' -ApimPublisherEmail you@example.com
 
 .EXAMPLE
     # Basicv2 provisions in minutes instead of the 30 to 45 the Developer tier takes.
     ./scripts/New-Deployment.ps1 -TenantId <tenant-id> -SubscriptionId <subscription-id> `
-        -NwsUserAgent 'ERDC.Agents (you@example.com)' -ApimPublisherEmail you@example.com `
+        -NwsUserAgent 'GeoLocation (you@example.com)' -ApimPublisherEmail you@example.com `
         -ApimSku Basicv2
 
 .EXAMPLE
     ./scripts/New-Deployment.ps1 -TenantId <tenant-id> -SubscriptionId <subscription-id> `
-        -NwsUserAgent 'ERDC.Agents (you@example.com)' -ApimPublisherEmail you@example.com `
+        -NwsUserAgent 'GeoLocation (you@example.com)' -ApimPublisherEmail you@example.com `
         -Cloud AzureUSGovernment -Location usgovvirginia
 #>
 [CmdletBinding()]
@@ -67,7 +67,7 @@ param(
     [ValidateSet('AzureCloud', 'AzureUSGovernment', 'AzureChinaCloud')]
     [string]$Cloud = 'AzureCloud',
 
-    [string]$EnvironmentName = 'erdc-agents-dev',
+    [string]$EnvironmentName = 'geo-agents-dev',
     [string]$Location = 'eastus',
     [string]$ResourceGroupName,
     [string]$OrchestratorEnvironmentName = 'geo-orchestrator-dev',

@@ -43,7 +43,7 @@ $envName = $config['AZURE_ENV_NAME']
 
 # Values with no sensible default. Named individually so the message says which one is missing.
 $required = @{
-    NWS_USER_AGENT       = "the contact string the National Weather Service requires, for example 'ERDC.Agents (you@example.com)'"
+    NWS_USER_AGENT       = "the contact string the National Weather Service requires, for example 'GeoLocation (you@example.com)'"
     APIM_PUBLISHER_EMAIL = 'the address API Management sends service notifications to'
 }
 

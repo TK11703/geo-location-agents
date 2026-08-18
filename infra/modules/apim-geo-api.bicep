@@ -101,7 +101,7 @@ resource geoApi 'Microsoft.ApiManagement/service/apis@2022-08-01' = {
   parent: apim
   name: apiId
   properties: {
-    displayName: 'ERDC Agents Geo API'
+    displayName: 'Geo-Location Agents API'
     description: 'Weather, terrain, mobility, and location endpoints consumed by Foundry specialist agents.'
     path: apiPath
     protocols: [

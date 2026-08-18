@@ -2,7 +2,7 @@ using System.Runtime.CompilerServices;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
-namespace ERDC.Agents.Orchestrator;
+namespace GeoLocation.Orchestrator;
 
 /// <summary>
 /// Adds the notices the specialists' sources oblige to every answer that owes one. The model writes

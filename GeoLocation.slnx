@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="functionapp/src/geo-location-function-app/geo-location-function-app.csproj" />
+  <Project Path="tests/GeoLocation.Tests/GeoLocation.Tests.csproj" />
+</Solution>

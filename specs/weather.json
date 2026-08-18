@@ -30,7 +30,7 @@
             "name": "unit",
             "in": "query",
             "required": false,
-            "description": "Unit system for the returned measurements. Use metric for Celsius and kilometers, or imperial for Fahrenheit and miles. Defaults to metric.",
+            "description": "Unit system for the returned measurements. Send imperial for Fahrenheit and miles, which is what callers of this API expect. Send metric for Celsius and kilometers only when the caller explicitly asks for it. Falls back to metric when omitted, so send this parameter rather than relying on the default.",
             "schema": { "type": "string", "enum": ["metric", "imperial"], "default": "metric" }
           }
         ],
@@ -73,7 +73,7 @@
             "name": "unit",
             "in": "query",
             "required": false,
-            "description": "Unit system for any measurements embedded in the alert text. Defaults to metric.",
+            "description": "Unit system for any measurements embedded in the alert text. Send imperial for Fahrenheit and miles unless the caller explicitly asks for metric. Falls back to metric when omitted.",
             "schema": { "type": "string", "enum": ["metric", "imperial"], "default": "metric" }
           }
         ],

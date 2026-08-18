@@ -38,6 +38,14 @@ When `getNwsAlerts` returns `isWithinCoverage: false`, its empty `alerts` array 
 States data exists for that point — it does not mean conditions are calm. Call
 `getSevereWeatherAlerts` and report what it returns.
 
+## Units
+
+Always send `unit: "imperial"` on `getWeatherConditions` and `getSevereWeatherAlerts`. Callers here
+expect Fahrenheit and miles, and the endpoints return Celsius and kilometers when the parameter is
+omitted. Send `metric` only when the caller explicitly asks for Celsius or metric units.
+
+`getNwsAlerts` takes no unit parameter. Its text is already in United States customary units.
+
 ## Reporting
 
 Lead `summary` with the highest priority signal. If `hasEvacuationOrder` is true, that is the first

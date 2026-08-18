@@ -24,6 +24,11 @@
     anything else is discarded and rebuilt, so a rerun against a new subscription cannot inherit
     resource ids from the last one.
 
+.PARAMETER Cloud
+    Sovereign cloud to deploy into. Sets it for azd and the Azure CLI, which default to commercial
+    independently of one another. Azure Maps and the Foundry Agent Service are not offered in every
+    cloud, so confirm both before using anything other than AzureCloud.
+
 .PARAMETER ConfigureOnly
     Stops after the environment is populated, before anything is provisioned. Useful for reviewing
     `azd env get-values` or running `azd provision --preview` by hand first.
@@ -41,6 +46,11 @@
     ./scripts/New-Deployment.ps1 -TenantId <tenant-id> -SubscriptionId <subscription-id> `
         -NwsUserAgent 'ERDC.Agents (you@example.com)' -ApimPublisherEmail you@example.com `
         -ApimSku Basicv2
+
+.EXAMPLE
+    ./scripts/New-Deployment.ps1 -TenantId <tenant-id> -SubscriptionId <subscription-id> `
+        -NwsUserAgent 'ERDC.Agents (you@example.com)' -ApimPublisherEmail you@example.com `
+        -Cloud AzureUSGovernment -Location usgovvirginia
 #>
 [CmdletBinding()]
 param(
@@ -54,12 +64,15 @@ param(
     # Where API Management sends service notifications. Required by the ARM resource itself.
     [Parameter(Mandatory)][string]$ApimPublisherEmail,
 
+    [ValidateSet('AzureCloud', 'AzureUSGovernment', 'AzureChinaCloud')]
+    [string]$Cloud = 'AzureCloud',
+
     [string]$EnvironmentName = 'erdc-agents-dev',
     [string]$Location = 'eastus',
     [string]$ResourceGroupName,
     [string]$OrchestratorEnvironmentName = 'geo-orchestrator-dev',
 
-    [ValidateSet('Developer', 'Basicv2', 'Standardv2', 'Premiumv2')]
+    [ValidateSet('Developer', 'Basicv2', 'Standardv2', 'Premium')]
     [string]$ApimSku = 'Developer',
 
     # Reuse an app registration that already exists instead of letting the preprovision hook create
@@ -75,6 +88,17 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 $orchestratorRoot = Join-Path $repoRoot 'orchestrator'
 if (-not $ResourceGroupName) { $ResourceGroupName = "rg-$EnvironmentName" }
+
+# The default region exists only in commercial, and the error a bad region produces arrives several
+# minutes into the provision without naming the cause.
+if ($Cloud -ne 'AzureCloud' -and -not $PSBoundParameters.ContainsKey('Location')) {
+    throw "-Location defaults to '$Location', which is not a region in $Cloud. Pass one from that cloud, such as usgovvirginia."
+}
+
+# The v2 tiers are offered in commercial regions only.
+if ($Cloud -ne 'AzureCloud' -and $ApimSku -like '*v2') {
+    throw "-ApimSku $ApimSku is not available in $Cloud. Use Developer or Premium."
+}
 
 function Write-Step {
     param([string]$Message)
@@ -142,6 +166,13 @@ foreach ($tool in 'azd', 'az') {
         throw "'$tool' is not on PATH. The Azure Developer CLI and the Azure CLI are both required."
     }
 }
+
+Write-Step "Selecting cloud '$Cloud'"
+
+# Neither CLI reads the other's cloud setting and both default to commercial. azd stores this
+# globally rather than per environment, so it persists for later azd runs in any project.
+if ((az cloud show --query name -o tsv 2>$null) -ne $Cloud) { Invoke-Native az @('cloud', 'set', '--name', $Cloud) }
+Invoke-Native azd @('config', 'set', 'cloud.name', $Cloud)
 
 Write-Step 'Signing in'
 

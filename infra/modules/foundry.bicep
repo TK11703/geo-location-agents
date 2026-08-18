@@ -32,6 +32,32 @@ param deployerPrincipalType string = 'User'
 
 param tags object = {}
 
+// environment() carries no suffix for the Foundry data plane, so the cloud's domain is resolved
+// here and both hostnames below are built from it.
+@description('DNS domain of the Foundry data plane. Empty resolves it from the cloud being deployed to.')
+param aiServicesDomain string = ''
+
+@description('SKU for both model deployments. Empty resolves it from the cloud being deployed to.')
+param modelDeploymentSku string = ''
+
+var aiServicesDomainByCloud = {
+  AzureCloud: 'azure.com'
+  AzureUSGovernment: 'azure.us'
+}
+var resolvedAiServicesDomain = !empty(aiServicesDomain)
+  ? aiServicesDomain
+  : (aiServicesDomainByCloud[?environment().name] ?? 'azure.com')
+
+// GlobalStandard routes across the commercial fleet and is not offered in Azure Government, which
+// has Standard and DataZoneStandard instead.
+var modelSkuByCloud = {
+  AzureCloud: 'GlobalStandard'
+  AzureUSGovernment: 'Standard'
+}
+var resolvedModelSku = !empty(modelDeploymentSku)
+  ? modelDeploymentSku
+  : (modelSkuByCloud[?environment().name] ?? 'GlobalStandard')
+
 var foundryUser = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '53ca6127-db72-4b80-b1b0-d745d6d5456d')
 var foundryProjectManager = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'eadc314b-1a2d-4efa-be10-5d325db5065e')
 
@@ -74,7 +100,7 @@ resource orchestratorModel 'Microsoft.CognitiveServices/accounts/deployments@202
   parent: account
   name: orchestratorDeploymentName
   sku: {
-    name: 'GlobalStandard'
+    name: resolvedModelSku
     capacity: orchestratorCapacity
   }
   properties: {
@@ -90,7 +116,7 @@ resource specialistModel 'Microsoft.CognitiveServices/accounts/deployments@2025-
   parent: account
   name: specialistDeploymentName
   sku: {
-    name: 'GlobalStandard'
+    name: resolvedModelSku
     capacity: specialistCapacity
   }
   properties: {
@@ -103,6 +129,22 @@ resource specialistModel 'Microsoft.CognitiveServices/accounts/deployments@2025-
   // Deployments on one account are applied serially; in parallel the second gets a conflict.
   dependsOn: [
     orchestratorModel
+  ]
+}
+
+// The Agents data plane does not recognise the project until this exists; without it every call to
+// /api/projects/{project}/agents answers "Project not found". enablePublicHostingEnvironment is
+// what lets the hosted orchestrator run when no virtual network is supplied. Takes ~15 minutes.
+resource agentsCapabilityHost 'Microsoft.CognitiveServices/accounts/capabilityHosts@2025-10-01-preview' = {
+  parent: account
+  name: 'agents'
+  properties: {
+    capabilityHostKind: 'Agents'
+    enablePublicHostingEnvironment: true
+  }
+  dependsOn: [
+    project
+    specialistModel
   ]
 }
 
@@ -130,6 +172,9 @@ resource deployerProjectManager 'Microsoft.Authorization/roleAssignments@2022-04
 output accountName string = account.name
 output projectName string = project.name
 output accountPrincipalId string = account.identity.principalId
-output projectEndpoint string = 'https://${account.name}.services.ai.azure.com/api/projects/${project.name}'
+output projectEndpoint string = 'https://${account.name}.services.ai.${resolvedAiServicesDomain}/api/projects/${project.name}'
+
+// What deploy-agents.ps1 and invoke-agent.ps1 ask the CLI for a token against.
+output tokenAudience string = 'https://ai.${resolvedAiServicesDomain}'
 output orchestratorDeploymentName string = orchestratorModel.name
 output specialistDeploymentName string = specialistModel.name

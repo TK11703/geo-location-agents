@@ -74,7 +74,7 @@ public sealed record MapRequest
         var width = Width ?? 512;
         var height = Height ?? 512;
         var mapType = string.IsNullOrWhiteSpace(MapType)
-            ? "road"
+            ? "satellite"
             : MapType.Trim().ToLowerInvariant();
 
         if (width is < 80 or > 2000)
@@ -161,5 +161,5 @@ public sealed record MapRenderRequest(
     int Width,
     int Height,
     int Zoom,
-    string TilesetId = "microsoft.base.road",
+    string TilesetId = "microsoft.imagery",
     string Output = "image");

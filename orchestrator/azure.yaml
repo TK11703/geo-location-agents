@@ -17,7 +17,10 @@ services:
         uses:
             - ai-project
         codeConfiguration:
-            dependencyResolution: remote_build
+            # azd runs `dotnet publish` locally and zips the output, so the zip is already built.
+            # remote_build would make Agent Service look for project sources that are not in the zip,
+            # and it fails with [ImageError] Container image not found because no image is produced.
+            dependencyResolution: bundled
             entryPoint: geo-orchestrator.dll
             runtime: dotnet_10
         container:

@@ -20,7 +20,10 @@ param deploymentContainerName string
 param mapImageContainerName string = 'map-images'
 
 param mapImageUrlMinutes int = 15
-param azureMapsEndpoint string = 'https://atlas.microsoft.com'
+
+@description('Azure Maps data plane. Supplied by main.bicep, which resolves it for the target cloud.')
+param azureMapsEndpoint string
+
 param elevationEndpoint string = 'https://epqs.nationalmap.gov/v1/json'
 param nwsEndpoint string = 'https://api.weather.gov'
 

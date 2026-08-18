@@ -2,11 +2,14 @@
   API-level policy for the ERDC Agents geo API.
   Chain: Foundry agent (system-assigned MI) -> APIM (token validated here) -> function app.
 
-  Values come from APIM named values so this file carries no secrets or tenant-specific IDs:
-    entra-tenant-id    Entra tenant GUID
-    geo-api-audience   App ID URI of the app registration representing this API
-    foundry-mi-oid     Object ID of the Foundry account's system-assigned MI service principal
-    function-host-key  (secret) function host key used to authenticate to the backend
+  Values come from APIM named values so this file carries no secrets, tenant-specific IDs, or
+  cloud-specific hostnames:
+    entra-tenant-id       Entra tenant GUID
+    entra-login-endpoint  Authority for this cloud, with a trailing slash
+    entra-v1-issuer       Issuer prefix for v1 tokens, with a trailing slash
+    geo-api-audience      App ID URI of the app registration representing this API
+    foundry-mi-oid        Object ID of the Foundry account's system-assigned MI service principal
+    function-host-key     (secret) function host key used to authenticate to the backend
 
   Backend URL comes from the API's serviceUrl, set at import time.
 -->
@@ -19,14 +22,14 @@
                   failed-validation-error-message="Unauthorized. A valid Entra token is required."
                   require-expiration-time="true"
                   require-signed-tokens="true">
-      <openid-config url="https://login.microsoftonline.com/{{entra-tenant-id}}/v2.0/.well-known/openid-configuration" />
+      <openid-config url="{{entra-login-endpoint}}{{entra-tenant-id}}/v2.0/.well-known/openid-configuration" />
       <audiences>
         <audience>{{geo-api-audience}}</audience>
       </audiences>
       <issuers>
-        <!-- Managed identity tokens are issued as v1, hence sts.windows.net. -->
-        <issuer>https://sts.windows.net/{{entra-tenant-id}}/</issuer>
-        <issuer>https://login.microsoftonline.com/{{entra-tenant-id}}/v2.0</issuer>
+        <!-- Managed identity tokens are issued as v1, hence the separate issuer. -->
+        <issuer>{{entra-v1-issuer}}{{entra-tenant-id}}/</issuer>
+        <issuer>{{entra-login-endpoint}}{{entra-tenant-id}}/v2.0</issuer>
       </issuers>
       <required-claims>
         <!-- Without this, any principal in the tenant that can get a token for this audience passes. -->

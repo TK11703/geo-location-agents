@@ -51,6 +51,29 @@ param apimApiPath string = 'geo'
 
 param entraTenantId string = subscription().tenantId
 
+// Every other hostname in this template is read back from the resource that owns it, or comes from
+// environment(). These three have no such source, so they are the only ones a sovereign cloud has
+// to be told about.
+@description('Issuer prefix for v1 tokens, which is what a managed identity presents.')
+param entraV1Issuer string = 'https://sts.windows.net/'
+
+@description('Azure Maps data plane. Empty resolves it from the cloud being deployed to.')
+param azureMapsEndpoint string = ''
+
+@description('DNS domain of the Foundry data plane. Empty resolves it from the cloud being deployed to.')
+param aiServicesDomain string = ''
+
+@description('SKU for both model deployments. Empty resolves it from the cloud being deployed to.')
+param modelDeploymentSku string = ''
+
+var azureMapsEndpointByCloud = {
+  AzureCloud: 'https://atlas.microsoft.com'
+  AzureUSGovernment: 'https://atlas.azure.us'
+}
+var resolvedAzureMapsEndpoint = !empty(azureMapsEndpoint)
+  ? azureMapsEndpoint
+  : (azureMapsEndpointByCloud[?environment().name] ?? 'https://atlas.microsoft.com')
+
 @minLength(1)
 @description('App ID URI of the app registration representing this API. The preprovision hook writes it into the environment.')
 param geoApiAudience string
@@ -105,6 +128,7 @@ module backend 'modules/backend.bicep' = {
     deploymentContainerName: deploymentContainerName
     nwsUserAgent: nwsUserAgent
     mapsAccountName: mapsAccountName
+    azureMapsEndpoint: resolvedAzureMapsEndpoint
   }
 }
 
@@ -139,6 +163,8 @@ module foundry 'modules/foundry.bicep' = {
     specialistCapacity: specialistCapacity
     deployerPrincipalId: deployerPrincipalId
     deployerPrincipalType: deployerPrincipalType
+    aiServicesDomain: aiServicesDomain
+    modelDeploymentSku: modelDeploymentSku
   }
 }
 
@@ -154,6 +180,7 @@ module geoApi 'modules/apim-geo-api.bicep' = {
     functionAppName: functionAppName
     functionAppApiUrl: backend.outputs.functionAppApiUrl
     entraTenantId: entraTenantId
+    entraV1Issuer: entraV1Issuer
     geoApiAudience: geoApiAudience
     foundryMiPrincipalId: foundry.outputs.accountPrincipalId
   }
@@ -176,6 +203,7 @@ output FOUNDRY_RESOURCE_GROUP string = rg.name
 output FOUNDRY_ACCOUNT_NAME string = foundry.outputs.accountName
 output FOUNDRY_PROJECT_NAME string = foundry.outputs.projectName
 output FOUNDRY_PROJECT_ENDPOINT string = foundry.outputs.projectEndpoint
+output FOUNDRY_TOKEN_AUDIENCE string = foundry.outputs.tokenAudience
 output FOUNDRY_MI_PRINCIPAL_ID string = foundry.outputs.accountPrincipalId
 output ORCHESTRATOR_MODEL string = foundry.outputs.orchestratorDeploymentName
 output SPECIALIST_MODEL string = foundry.outputs.specialistDeploymentName

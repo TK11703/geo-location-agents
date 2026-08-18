@@ -17,7 +17,7 @@ public sealed class MapRequestTests
         Assert.Equal(512, request.Width);
         Assert.Equal(512, request.Height);
         Assert.Equal(12, request.Zoom);
-        Assert.Equal("microsoft.base.road", request.TilesetId);
+        Assert.Equal("microsoft.imagery", request.TilesetId);
     }
 
     [Theory]

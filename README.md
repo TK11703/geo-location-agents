@@ -177,6 +177,7 @@ different subscription or tenant means different arguments rather than a changed
 | APIM notification address | `-ApimPublisherEmail` | required by the ARM resource |
 | Environment name | `-EnvironmentName` | `erdc-agents-dev` |
 | Region | `-Location` | `eastus` |
+| Cloud | `-Cloud` | `AzureCloud` |
 | Resource group | `-ResourceGroupName` | `rg-<environment name>` |
 | APIM tier | `-ApimSku` | `Developer` |
 | Existing gateway audience | `-GeoApiAudience` | created by the preprovision hook |
@@ -201,6 +202,61 @@ Budget for the wait. API Management Developer takes 30 to 45 minutes to provisio
 is the cheapest tier that still supports the `rate-limit-by-key` policy this API applies; Consumption
 does not support that policy at all. `-ApimSku Basicv2` trades cost for a deployment that finishes in
 minutes.
+
+### Sovereign clouds
+
+No hostname in the templates is written as a commercial literal. Storage, the function app, and the
+gateway URLs are read back from the resources that own them, the Entra authority comes from
+`environment()`, and the rest resolve from the cloud being deployed to. Set any of these only to
+override that:
+
+| azd variable | Bicep parameter | Commercial | Azure Government |
+|--------------|-----------------|------------|------------------|
+| `AZURE_MAPS_ENDPOINT` | `azureMapsEndpoint` | `https://atlas.microsoft.com` | `https://atlas.azure.us` |
+| `AI_SERVICES_DOMAIN` | `aiServicesDomain` | `azure.com` | `azure.us` |
+| `MODEL_DEPLOYMENT_SKU` | `modelDeploymentSku` | `GlobalStandard` | `Standard` |
+| `ENTRA_V1_ISSUER` | `entraV1Issuer` | `https://sts.windows.net/` | unchanged |
+
+`-Cloud` sets the cloud for azd and the Azure CLI, which default to commercial independently of one
+another. The Foundry data-plane hostname and the token audience the agent scripts request are both
+derived from `aiServicesDomain`, so they follow it without a second setting:
+
+```powershell
+./scripts/New-Deployment.ps1 `
+    -TenantId <tenant-id> `
+    -SubscriptionId <subscription-id> `
+    -NwsUserAgent 'ERDC.Agents (you@example.com)' `
+    -ApimPublisherEmail you@example.com `
+    -Cloud AzureUSGovernment `
+    -Location usgovvirginia
+```
+
+Two differences are not configuration. `GlobalStandard` does not exist in Azure Government, so the
+model deployments fall back to `Standard`, which `gpt-4.1` and `gpt-4.1-mini` at version
+`2025-04-14` both support in US Gov Virginia. And the API Management v2 tiers are commercial-only,
+so `-ApimSku Basicv2` is rejected outside commercial and the Developer tier's 30-to-45-minute
+provision applies.
+
+The open question is the Foundry Agent Service itself. Azure Maps, Azure OpenAI, API Management,
+Functions, and Entra are all present in US Gov Virginia, but the Agent Service region tables list no
+Gov regions, and the hosted orchestrator under `orchestrator/` depends on it. Confirm that before
+committing to a Gov deployment; the specialists and the gateway would work without it, the
+orchestrator would not.
+
+[scripts/Remove-Deployment.ps1](scripts/Remove-Deployment.ps1) is the reverse, and covers the four
+things `azd down` leaves behind: the Entra app registration, both local azd environments, and the
+soft-deleted Foundry account and API Management instance, which otherwise keep their names reserved
+and their model quota allocated against a redeploy of the same environment name.
+
+```powershell
+./scripts/Remove-Deployment.ps1 -EnvironmentName erdc-agents-dev
+```
+
+It prompts before deleting anything; `-WhatIf` reports the target and stops, and `-Force` skips the
+prompt. Pass `-KeepAppRegistration` when the app was supplied through `-GeoApiAudience` rather than
+created by the hook, or `-KeepEnvironmentFiles` to delete the Azure resources but keep the settings
+for a redeploy. `-Cloud` has to match the cloud the environment was deployed into. Rerunning is
+safe: anything already gone is reported and skipped.
 
 The orchestrator is a separate azd project under `orchestrator/` and is deployed after this one, with
 `FOUNDRY_PROJECT_ENDPOINT` and `AZURE_AI_MODEL_DEPLOYMENT_NAME` taken from the outputs above. Its
@@ -231,9 +287,9 @@ When it finishes, [orchestrator/ask.ps1](orchestrator/ask.ps1) is the smoke test
 | `longitude` | Conditional | Longitude from -180 to 180. Requires `latitude`. |
 | `width` | No | Image width from 80 to 2000. Default: 512. |
 | `height` | No | Image height from 80 to 1500. Default: 512. |
-| `zoom` | No | Zoom from 0 to 20. Default: 12. Do not combine with `radiusMeters`. |
+| `zoom` | No | Zoom from 0 to 20, or 0 to 19 under the default satellite style. Default: 12. Do not combine with `radiusMeters`. |
 | `radiusMeters` | No | Ground radius from 25 to 500000 to frame instead of a zoom level. Requires coordinates. |
-| `mapType` | No | `road`, `dark`, or `satellite`. Default: `road`. Satellite supports zoom 0 to 19. |
+| `mapType` | No | `road`, `dark`, or `satellite`. Default: `satellite`. Satellite supports zoom 0 to 19. |
 
 For example, request satellite imagery for Seattle:
 

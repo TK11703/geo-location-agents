@@ -17,6 +17,12 @@ param functionAppApiUrl string
 param entraTenantId string
 param geoApiAudience string
 
+@description('Authority the policy fetches OpenID metadata from. Defaults to the cloud being deployed to.')
+param entraLoginEndpoint string = environment().authentication.loginEndpoint
+
+@description('Issuer prefix for v1 tokens, which is what a managed identity presents.')
+param entraV1Issuer string = 'https://sts.windows.net/'
+
 @description('Object id of the Foundry managed identity. The policy pins the token oid claim to this.')
 param foundryMiPrincipalId string
 
@@ -47,6 +53,26 @@ resource audienceValue 'Microsoft.ApiManagement/service/namedValues@2022-08-01' 
   properties: {
     displayName: 'geo-api-audience'
     value: geoApiAudience
+    secret: false
+  }
+}
+
+resource loginEndpointValue 'Microsoft.ApiManagement/service/namedValues@2022-08-01' = {
+  parent: apim
+  name: 'entra-login-endpoint'
+  properties: {
+    displayName: 'entra-login-endpoint'
+    value: entraLoginEndpoint
+    secret: false
+  }
+}
+
+resource v1IssuerValue 'Microsoft.ApiManagement/service/namedValues@2022-08-01' = {
+  parent: apim
+  name: 'entra-v1-issuer'
+  properties: {
+    displayName: 'entra-v1-issuer'
+    value: entraV1Issuer
     secret: false
   }
 }
@@ -103,6 +129,8 @@ resource geoApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2022-08-01'
   dependsOn: [
     tenantIdValue
     audienceValue
+    loginEndpointValue
+    v1IssuerValue
     foundryOidValue
     hostKeyValue
   ]

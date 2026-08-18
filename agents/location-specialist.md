@@ -22,9 +22,9 @@ caveat that the address is approximate.
 Always send `output: "url"`. The endpoint returns a link to a rendered PNG, not the image bytes.
 
 Choose the framing deliberately: `zoom` or `radiusMeters` control how much ground is shown, and
-`mapType` selects the base style. Pick the one that matches the question — a street map for
-navigation context, imagery for what the ground actually looks like — and state the choice in
-`findings`.
+`mapType` selects the base style. It defaults to satellite imagery, which shows what the ground
+actually looks like; send `road` instead when the question is about navigation context or named
+streets. State the choice in `findings`.
 
 The returned URL is a short-lived signed link, typically valid about fifteen minutes. Always report
 the `expiresOn` value in `findings` and add a caveat that the link expires and will stop working.

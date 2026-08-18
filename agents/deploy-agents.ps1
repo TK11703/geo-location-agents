@@ -19,6 +19,11 @@
     current one, so identical redeploys do not accumulate versions; this script reads the version
     before and after publishing to report which agents actually moved.
 
+.PARAMETER ReadyTimeoutMinutes
+    How long to wait for the project to start answering on the Agents endpoint before giving up.
+    On a freshly provisioned account this lags the capability host reaching Succeeded in ARM by a
+    long way, and until it catches up every request returns 404 'Project not found'.
+
 .EXAMPLE
     ./agents/deploy-agents.ps1
     ./agents/deploy-agents.ps1 -Only weather-specialist
@@ -26,7 +31,10 @@
 [CmdletBinding()]
 param(
     [string]$ApiVersion = 'v1',
-    [string[]]$Only
+    [string[]]$Only,
+
+    [ValidateRange(0, 240)]
+    [int]$ReadyTimeoutMinutes = 60
 )
 
 $ErrorActionPreference = 'Stop'
@@ -74,9 +82,39 @@ $repoRoot = Split-Path $PSScriptRoot -Parent
 $contract = (Get-Content (Join-Path $PSScriptRoot '_output-contract.md') -Raw).TrimStart([char]0xFEFF)
 $textFormat = Get-Content (Join-Path $PSScriptRoot 'report-schema.json') -Raw | ConvertFrom-Json
 
-$token = az account get-access-token --resource https://ai.azure.com --query accessToken -o tsv
-if (-not $token) { throw 'Could not acquire an ai.azure.com token. Run az login.' }
-$headers = @{ Authorization = "Bearer $token" }
+# Written into the environment by the Bicep, which derives it from the target cloud. Environments
+# provisioned before that output existed fall back to the commercial audience.
+$audience = if ($config.FOUNDRY_TOKEN_AUDIENCE) { $config.FOUNDRY_TOKEN_AUDIENCE } else { 'https://ai.azure.com' }
+
+function Get-FoundryHeaders {
+    $token = az account get-access-token --resource $audience --query accessToken -o tsv
+    if (-not $token) { throw "Could not acquire a token for $audience. Run az login." }
+    @{ Authorization = "Bearer $token" }
+}
+
+$headers = Get-FoundryHeaders
+
+# A new account's project is not routable on the Agents endpoint the moment provisioning finishes.
+# The capability host reports Succeeded in ARM well before the Agents backend picks the project up,
+# and until it does every request here answers 404 'Project not found'. Waiting is the difference
+# between this running as an azd postdeploy hook and having to rerun it by hand later.
+$deadline = (Get-Date).AddMinutes($ReadyTimeoutMinutes)
+while ($true) {
+    try {
+        Invoke-RestMethod -Uri "$($config.FOUNDRY_PROJECT_ENDPOINT)/agents?api-version=$ApiVersion" -Headers $headers | Out-Null
+        break
+    }
+    catch {
+        if ($_.Exception.Response.StatusCode.value__ -ne 404) { throw }
+        if ((Get-Date) -ge $deadline) {
+            throw "$($config.FOUNDRY_PROJECT_ENDPOINT) still reports 'Project not found' after $ReadyTimeoutMinutes minutes. Check that the account's 'agents' capability host exists and has provisioningState Succeeded."
+        }
+        "  {0}  waiting for the project to become available on the Agents endpoint" -f (Get-Date -Format HH:mm:ss)
+        Start-Sleep -Seconds 30
+        # Refreshed each attempt so a long wait cannot outlive the token.
+        $headers = Get-FoundryHeaders
+    }
+}
 
 foreach ($a in $agents) {
     $specPath = Join-Path $repoRoot "specs/$($a.Spec)"

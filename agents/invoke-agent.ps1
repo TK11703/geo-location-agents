@@ -17,8 +17,11 @@ $ErrorActionPreference = 'Stop'
 
 $config = & (Join-Path $PSScriptRoot '..\scripts\Get-AzdConfig.ps1') -Require FOUNDRY_PROJECT_ENDPOINT
 
-$token = (az account get-access-token --scope 'https://ai.azure.com/.default' --query accessToken -o tsv)
-if (-not $token) { throw 'Could not acquire a token for https://ai.azure.com.' }
+# Derived from the target cloud by the Bicep; older environments predate the output.
+$audience = if ($config.FOUNDRY_TOKEN_AUDIENCE) { $config.FOUNDRY_TOKEN_AUDIENCE } else { 'https://ai.azure.com' }
+
+$token = (az account get-access-token --scope "$audience/.default" --query accessToken -o tsv)
+if (-not $token) { throw "Could not acquire a token for $audience." }
 
 $body = @{
     agent_reference = @{ type = 'agent_reference'; name = $AgentName }

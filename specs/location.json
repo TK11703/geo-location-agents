@@ -73,7 +73,7 @@
             "name": "mapType",
             "in": "query",
             "required": false,
-            "description": "Visual style of the map. Use satellite for aerial imagery, road for a standard labeled street map, or dark for a dark themed street map. Defaults to satellite.",
+            "description": "Visual style of the map. Omit this parameter to get satellite aerial imagery, which is the default and the right choice for showing what is on the ground. Send road only when the caller explicitly asks about streets or navigation, or dark only when they ask for a dark theme.",
             "schema": { "type": "string", "enum": ["road", "dark", "satellite"], "default": "satellite" }
           },
           {

@@ -22,9 +22,11 @@ caveat that the address is approximate.
 Always send `output: "url"`. The endpoint returns a link to a rendered PNG, not the image bytes.
 
 Choose the framing deliberately: `zoom` or `radiusMeters` control how much ground is shown, and
-`mapType` selects the base style. It defaults to satellite imagery, which shows what the ground
-actually looks like; send `road` instead when the question is about navigation context or named
-streets. State the choice in `findings`.
+`mapType` selects the base style. Omit `mapType`. The endpoint then returns satellite imagery, which
+shows what the ground actually looks like, and that is what this agent exists to show. Send `road`
+only when the caller explicitly asks about streets, navigation, or named roads, and `dark` only when
+they ask for a dark theme. A bare request for "a map" is not a request for a road map. State the
+choice in `findings`.
 
 The returned URL is a short-lived signed link, typically valid about fifteen minutes. Always report
 the `expiresOn` value in `findings` and add a caveat that the link expires and will stop working.

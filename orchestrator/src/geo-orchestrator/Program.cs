@@ -22,8 +22,12 @@ var deployment = Environment.GetEnvironmentVariable("AZURE_AI_MODEL_DEPLOYMENT_N
 // Off Azure there is no instance metadata endpoint, and the probe for it fails with a socket error
 // rather than a clean "unavailable". DefaultAzureCredential treats that as fatal and abandons the
 // chain before it reaches the signed-in developer, so managed identity has to be excluded outright
-// when running locally.
-TokenCredential credential = FoundryEnvironment.IsHosted
+// when running locally. WEBSITE_SITE_NAME is set only by App Service, which is where this runs in
+// clouds the Foundry Agent Service does not serve.
+var isHosted = FoundryEnvironment.IsHosted
+    || Environment.GetEnvironmentVariable("WEBSITE_SITE_NAME") is not null;
+
+TokenCredential credential = isHosted
     ? new DefaultAzureCredential()
     : new DefaultAzureCredential(new DefaultAzureCredentialOptions { ExcludeManagedIdentityCredential = true });
 

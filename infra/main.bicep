@@ -49,6 +49,34 @@ param apimPublisherEmail string
 param apimApiId string = 'geo-api'
 param apimApiPath string = 'geo'
 
+// The Foundry Agent Service can host the orchestrator itself, which leaves one less resource to own
+// and one less identity to grant. It is a commercial-only offering today, so anywhere else the same
+// binary runs on App Service behind the same gateway. If it reaches Government, this map is the
+// only line that has to change.
+@description('Where the orchestrator runs. Empty resolves it from the cloud being deployed to.')
+@allowed([
+  ''
+  'FoundryHosted'
+  'LinuxAppService'
+])
+param orchestratorHost string = ''
+
+@description('App ID URI of the app registration representing the orchestrator API. Required only when the orchestrator is self-hosted; the preprovision hook writes it into the environment.')
+param orchestratorApiAudience string = ''
+
+param orchestratorApiId string = 'orchestrator-api'
+param orchestratorApiPath string = 'orchestrator'
+param orchestratorAppServiceSku string = 'B1'
+
+var orchestratorHostByCloud = {
+  AzureCloud: 'FoundryHosted'
+  AzureUSGovernment: 'LinuxAppService'
+}
+var resolvedOrchestratorHost = !empty(orchestratorHost)
+  ? orchestratorHost
+  : (orchestratorHostByCloud[?environment().name] ?? 'FoundryHosted')
+var selfHostedOrchestrator = resolvedOrchestratorHost == 'LinuxAppService'
+
 param entraTenantId string = subscription().tenantId
 
 // Every other hostname in this template is read back from the resource that owns it, or comes from
@@ -114,6 +142,9 @@ var mapsAccountName = 'maps-${namePrefix}-${resourceToken}'
 var apimServiceName = 'apim-${namePrefix}-${resourceToken}'
 var foundryAccountName = 'aif-${namePrefix}-${resourceToken}'
 var foundryProjectName = 'proj-${namePrefix}'
+var orchestratorAppName = 'app-${namePrefix}-${resourceToken}'
+var orchestratorPlanName = 'plan-orch-${namePrefix}-${resourceToken}'
+var orchestratorIdentityName = 'id-orch-${namePrefix}-${resourceToken}'
 var deploymentContainerName = 'app-package-${take(replace(functionAppName, '-', ''), 32)}-${take(resourceToken, 7)}'
 
 resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
@@ -153,6 +184,18 @@ module apim 'modules/apim.bicep' = {
   }
 }
 
+// Deployed even where nothing uses it, so that the Foundry role assignment below can name a
+// principal that already exists rather than one App Service would have to be created first to mint.
+module orchestratorIdentity 'modules/orchestrator-identity.bicep' = {
+  name: 'orchestrator-identity'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    name: orchestratorIdentityName
+  }
+}
+
 module foundry 'modules/foundry.bicep' = {
   name: 'foundry'
   scope: rg
@@ -171,6 +214,7 @@ module foundry 'modules/foundry.bicep' = {
     specialistCapacity: specialistCapacity
     deployerPrincipalId: deployerPrincipalId
     deployerPrincipalType: deployerPrincipalType
+    orchestratorPrincipalId: selfHostedOrchestrator ? orchestratorIdentity.outputs.principalId : ''
     aiServicesDomain: aiServicesDomain
     modelDeploymentSku: modelDeploymentSku
   }
@@ -192,6 +236,43 @@ module geoApi 'modules/apim-geo-api.bicep' = {
     geoApiAudience: geoApiAudience
     foundryMiPrincipalId: foundry.outputs.accountPrincipalId
   }
+}
+
+module orchestratorApp 'modules/orchestrator-appservice.bicep' = if (selfHostedOrchestrator) {
+  name: 'orchestrator-app'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    name: orchestratorAppName
+    planName: orchestratorPlanName
+    sku: orchestratorAppServiceSku
+    identityResourceId: orchestratorIdentity.outputs.id
+    identityClientId: orchestratorIdentity.outputs.clientId
+    foundryProjectEndpoint: foundry.outputs.projectEndpoint
+    modelDeploymentName: foundry.outputs.orchestratorDeploymentName
+    appInsightsConnectionString: backend.outputs.appInsightsConnectionString
+    callerPrincipalId: apim.outputs.principalId
+    authClientId: replace(orchestratorApiAudience, 'api://', '')
+    authAudience: orchestratorApiAudience
+    entraV1Issuer: entraV1Issuer
+  }
+}
+
+module orchestratorApi 'modules/apim-orchestrator-api.bicep' = if (selfHostedOrchestrator) {
+  name: 'orchestrator-api'
+  scope: rg
+  params: {
+    apimServiceName: apim.outputs.apimServiceName
+    apiId: orchestratorApiId
+    apiPath: orchestratorApiPath
+    orchestratorUrl: orchestratorApp!.outputs.url
+    orchestratorApiAudience: orchestratorApiAudience
+  }
+  // Its policy reads the tenant, authority, and issuer named values the geo API declares.
+  dependsOn: [
+    geoApi
+  ]
 }
 
 output AZURE_RESOURCE_GROUP string = rg.name
@@ -216,3 +297,9 @@ output FOUNDRY_MI_PRINCIPAL_ID string = foundry.outputs.accountPrincipalId
 output ORCHESTRATOR_MODEL string = foundry.outputs.orchestratorDeploymentName
 output SPECIALIST_MODEL string = foundry.outputs.specialistDeploymentName
 output AZURE_AI_MODEL_DEPLOYMENT_NAME string = foundry.outputs.orchestratorDeploymentName
+
+// Empty under FoundryHosted, which is what New-Deployment.ps1 and ask.ps1 branch on.
+output ORCHESTRATOR_HOST string = resolvedOrchestratorHost
+output ORCHESTRATOR_APP_NAME string = selfHostedOrchestrator ? orchestratorApp!.outputs.name : ''
+output ORCHESTRATOR_URL string = selfHostedOrchestrator ? orchestratorApp!.outputs.url : ''
+output ORCHESTRATOR_API_BASE_URL string = selfHostedOrchestrator ? orchestratorApi!.outputs.gatewayApiUrl : ''

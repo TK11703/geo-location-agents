@@ -24,6 +24,9 @@ param specialistCapacity int
 @description('Principal running the deployment. Foundry data-plane access is not implied by subscription Owner, so publishing agents fails without this.')
 param deployerPrincipalId string = ''
 
+@description('Identity a self-hosted orchestrator runs as. Empty when the Agent Service hosts it, because then the data-plane access is its own.')
+param orchestratorPrincipalId string = ''
+
 @allowed([
   'User'
   'ServicePrincipal'
@@ -150,6 +153,19 @@ resource deployerProjectManager 'Microsoft.Authorization/roleAssignments@2022-04
     principalId: deployerPrincipalId
     roleDefinitionId: foundryProjectManager
     principalType: deployerPrincipalType
+  }
+}
+
+// An orchestrator the Agent Service hosts gets this access by virtue of running inside the project.
+// One running anywhere else has to be granted it: it calls the model, and resolves each specialist
+// by name against this account.
+resource orchestratorFoundryUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(orchestratorPrincipalId)) {
+  scope: account
+  name: guid(account.id, orchestratorPrincipalId, foundryUser)
+  properties: {
+    principalId: orchestratorPrincipalId
+    roleDefinitionId: foundryUser
+    principalType: 'ServicePrincipal'
   }
 }
 

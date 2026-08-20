@@ -232,3 +232,6 @@ output functionAppPrincipalId string = functionApp.identity.principalId
 output functionAppApiUrl string = 'https://${functionApp.properties.defaultHostName}/api'
 output mapsAccountName string = maps.name
 output logAnalyticsWorkspaceId string = logAnalytics.id
+
+@secure()
+output appInsightsConnectionString string = appInsights.properties.ConnectionString

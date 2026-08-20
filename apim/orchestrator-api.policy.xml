@@ -1,0 +1,65 @@
+<!--
+  API-level policy for the self-hosted orchestrator.
+  Chain: caller -> APIM (token validated here) -> orchestrator App Service -> specialist agents.
+
+  Values come from APIM named values so this file carries no secrets, tenant-specific IDs, or
+  cloud-specific hostnames:
+    entra-tenant-id            Entra tenant GUID
+    entra-login-endpoint       Authority for this cloud, with a trailing slash
+    entra-v1-issuer            Issuer prefix for v1 tokens, with a trailing slash
+    orchestrator-api-audience  App ID URI of the app registration representing this API
+
+  Deliberately not a copy of geo-api.policy.xml. That one pins the oid claim because it has exactly
+  one legitimate caller; this is the front door, so its callers are whoever has been granted the
+  audience. The separate audience is what keeps a token minted for the backend geo API from being
+  replayed here, and the reverse.
+
+  Backend URL comes from the API's serviceUrl, set at import time.
+-->
+<policies>
+  <inbound>
+    <base />
+
+    <validate-jwt header-name="Authorization"
+                  failed-validation-httpcode="401"
+                  failed-validation-error-message="Unauthorized. A valid Entra token is required."
+                  require-expiration-time="true"
+                  require-signed-tokens="true">
+      <openid-config url="{{entra-login-endpoint}}{{entra-tenant-id}}/v2.0/.well-known/openid-configuration" />
+      <audiences>
+        <audience>{{orchestrator-api-audience}}</audience>
+      </audiences>
+      <issuers>
+        <!-- Managed identity tokens are issued as v1, hence the separate issuer. -->
+        <issuer>{{entra-v1-issuer}}{{entra-tenant-id}}/</issuer>
+        <issuer>{{entra-login-endpoint}}{{entra-tenant-id}}/v2.0</issuer>
+      </issuers>
+    </validate-jwt>
+
+    <!-- One request here fans out to five specialists, each of which spends the geo API's own
+         budget, so the ceiling is lower than the one downstream. -->
+    <rate-limit-by-key calls="20"
+                       renewal-period="60"
+                       counter-key='@(context.Request.Headers.GetValueOrDefault("Authorization","").AsJwt()?.Subject)' />
+
+    <!-- The caller's token is scoped to this gateway and is not what the App Service trusts. The
+         gateway presents its own managed identity instead, which is the only principal the app
+         accepts, so a request that skipped this policy cannot satisfy it. -->
+    <authentication-managed-identity resource="{{orchestrator-api-audience}}" />
+  </inbound>
+
+  <backend>
+    <!-- A cold model plus a fan-out across five specialists runs well past what a gateway call
+         normally assumes. 230 seconds is where the App Service front end drops an idle request, so
+         going higher would only report the failure later than the backend already has. -->
+    <forward-request timeout="230" buffer-response="false" />
+  </backend>
+
+  <outbound>
+    <base />
+  </outbound>
+
+  <on-error>
+    <base />
+  </on-error>
+</policies>

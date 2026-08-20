@@ -1,7 +1,13 @@
 # Geo Orchestrator
 
-A hosted agent that answers geospatial questions by fanning out to the specialist prompt agents and
+An agent that answers geospatial questions by fanning out to the specialist prompt agents and
 merging their reports into one answer.
+
+It runs in one of two places. In commercial Azure the Foundry Agent Service hosts it; everywhere else
+it runs as an ordinary ASP.NET Core app on Linux App Service behind API Management, because Agent
+Service hosting is commercial-only today. The binary is the same either way — AgentHost serves the
+OpenAI Responses protocol at `/responses` whatever it is running on — so only the address callers use
+changes. The root [README](../README.md) covers how the choice is made and how to override it.
 
 Each specialist is registered as a tool rather than called on a fixed schedule, so the model decides
 which domains a question touches and calls those in parallel. The specialists in turn reach the
@@ -14,7 +20,7 @@ whichever specialists the question touches. That first hop is sequential because
 second hop depends on its result.
 
 ```
-geo-orchestrator (hosted, this project)
+geo-orchestrator (this project)
     -> place-resolver (prompt agent)          first, alone, only when a place was named
     -> weather / terrain / mobility / location specialists (prompt agents)
         -> APIM  ->  function app
@@ -30,7 +36,16 @@ The repository root is an azd project using the Bicep provider, which is what pr
 function app and the APIM API. This one uses the `microsoft.foundry` provider. A single azd project
 cannot do both, so the two live side by side and are deployed independently.
 
+This only applies to the Agent Service path. On App Service the same source is published with
+`dotnet publish` and a zip deploy, driven by [New-Deployment.ps1](../scripts/New-Deployment.ps1)
+rather than by azd: azd deploys every service it is given on every run, and there is no conditional
+form of that, so a service defined here would also be pushed on the runs where the Agent Service is
+not the target.
+
 ## Deploying
+
+Neither of these is normally run by hand — [New-Deployment.ps1](../scripts/New-Deployment.ps1) picks
+the right one from the resolved host. Under `FoundryHosted`:
 
 ```pwsh
 azd deploy geo-orchestrator --cwd orchestrator
@@ -43,12 +58,22 @@ only the endpoint, so that azd can resolve the reference.
 
 Deployment is a remote build from source — there is no Dockerfile.
 
+Under `LinuxAppService` the App Service and its plan are created by the root project's Bicep, and
+only the code is pushed:
+
+```pwsh
+dotnet publish src/geo-orchestrator/geo-orchestrator.csproj -c Release -o <staging>
+az webapp deploy --name <app> --resource-group <rg> --type zip --src-path <staging>.zip
+```
+
 ## Environment variables
 
 | Variable | Where it comes from |
 |----------|---------------------|
-| `FOUNDRY_PROJECT_ENDPOINT` | `azure.yaml` when hosted, `src/geo-orchestrator/.env` when local |
+| `FOUNDRY_PROJECT_ENDPOINT` | `azure.yaml` when Foundry-hosted, app settings on App Service, `src/geo-orchestrator/.env` when local |
 | `AZURE_AI_MODEL_DEPLOYMENT_NAME` | same |
+| `AZURE_CLIENT_ID` | App Service only; names the user-assigned identity for `DefaultAzureCredential` |
+| `PORT` | App Service only; AgentHost binds this and overrides `ASPNETCORE_URLS` to do it |
 
 `.env` is excluded from deployment by [.azdignore](src/geo-orchestrator/.azdignore), so anything the
 hosted container needs has to be declared in `azure.yaml`.
@@ -75,8 +100,11 @@ history without calling any tool.
 ./orchestrator/ask.ps1 -Message 'Conditions at 51.5072, -0.1276?' -Deployed
 ```
 
-A hosted agent is reached at `/agents/<name>/endpoint/protocols/openai/responses`. The project-level
-`/openai/v1/responses` route used for prompt agents rejects it.
+A Foundry-hosted agent is reached at `/agents/<name>/endpoint/protocols/openai/responses`. The
+project-level `/openai/v1/responses` route used for prompt agents rejects it. On App Service the
+address is `https://<gateway>/orchestrator/responses` instead, and the token is requested for the
+orchestrator API's own audience rather than for Foundry. `ask.ps1` reads both out of the environment,
+so the same command works against either host.
 
 London is the useful test case: it is outside both the USGS elevation coverage and the United States
 National Weather Service, so a correct answer reports the elevation gap and attributes the weather

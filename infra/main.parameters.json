@@ -18,6 +18,9 @@
     "apimPublisherName": { "value": "${APIM_PUBLISHER_NAME=Geo-Location Agents}" },
     "apimPublisherEmail": { "value": "${APIM_PUBLISHER_EMAIL}" },
     "geoApiAudience": { "value": "${GEO_API_AUDIENCE}" },
+    "orchestratorHost": { "value": "${ORCHESTRATOR_HOST}" },
+    "orchestratorApiAudience": { "value": "${ORCHESTRATOR_API_AUDIENCE}" },
+    "orchestratorAppServiceSku": { "value": "${ORCHESTRATOR_APP_SERVICE_SKU=B1}" },
     "orchestratorDeploymentName": { "value": "${ORCHESTRATOR_MODEL=gpt-4.1}" },
     "specialistDeploymentName": { "value": "${SPECIALIST_MODEL=gpt-4-1-mini}" }
   }

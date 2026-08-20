@@ -1,12 +1,12 @@
 <#
 .SYNOPSIS
-    Removes everything New-Deployment.ps1 creates: the Azure resources, the Entra app registration,
+    Removes everything New-Deployment.ps1 creates: the Azure resources, the Entra app registrations,
     and both local azd environments.
 
 .DESCRIPTION
     `azd down` is most of a teardown but not all of one. Four things sit outside what it removes:
 
-      1. The Entra app registration the preprovision hook creates, and the agent identity blueprints
+      1. The Entra app registrations the preprovision hook creates, and the agent identity blueprints
          and principals Foundry creates for each published agent. Entra objects are not ARM
          resources, so no deployment owns them and `azd down` never sees them. The agent identities
          are the ones that accumulate: a fresh set of three objects per agent, every deployment.
@@ -39,7 +39,7 @@
     Root azd environment to remove. Defaults to whichever one azd currently has selected.
 
 .PARAMETER KeepAppRegistration
-    Leaves the Entra app registration in place. Use this when the app was supplied through
+    Leaves the Entra app registrations in place. Use this when an app was supplied through
     New-Deployment.ps1 -GeoApiAudience rather than created by the preprovision hook, or when the
     same app is shared by another environment.
 
@@ -210,8 +210,10 @@ if (-not $ResourceGroupName) { $ResourceGroupName = "rg-$EnvironmentName" }
 $foundryAccountName = $config['FOUNDRY_ACCOUNT_NAME']
 $foundryProjectName = $config['FOUNDRY_PROJECT_NAME']
 $apimServiceName = $config['APIM_SERVICE_NAME']
-$appRegistrationName = "geo-api-$EnvironmentName"
-$appId = $config['GEO_API_APP_ID']
+$appRegistrations = [ordered]@{
+    "geo-api-$EnvironmentName"          = $config['GEO_API_APP_ID']
+    "geo-orchestrator-$EnvironmentName" = $config['ORCHESTRATOR_API_APP_ID']
+}
 
 if ((az cloud show --query name -o tsv 2>$null) -ne $Cloud) { Invoke-Native az @('cloud', 'set', '--name', $Cloud) }
 Invoke-Native azd @('config', 'set', 'cloud.name', $Cloud)
@@ -229,7 +231,7 @@ $groupExists = (az group exists --name $ResourceGroupName) -eq 'true'
 "  subscription      $($account.name) ($SubscriptionId)"
 "  environment       $EnvironmentName"
 "  resource group    $ResourceGroupName$(if (-not $groupExists) { '  (already gone)' })"
-"  app registration  $(if ($KeepAppRegistration) { 'kept (-KeepAppRegistration)' } else { $appRegistrationName })"
+"  app registration  $(if ($KeepAppRegistration) { 'kept (-KeepAppRegistration)' } else { $appRegistrations.Keys -join ', ' })"
 "  local azd envs    $(if ($KeepEnvironmentFiles) { 'kept (-KeepEnvironmentFiles)' } else { "$EnvironmentName, $OrchestratorEnvironmentName" })"
 
 $target = "resource group '$ResourceGroupName' in subscription $SubscriptionId"
@@ -312,14 +314,17 @@ foreach ($deleted in $deletedApim) {
 if ($purged -eq 0) { "  nothing belonging to '$EnvironmentName' was in a soft-deleted state" }
 
 if (-not $KeepAppRegistration) {
-    Write-Step "Deleting the Entra app registration '$appRegistrationName'"
+    Write-Step 'Deleting the Entra app registrations'
 
-    if (-not $appId) { $appId = az ad app list --display-name $appRegistrationName --query '[0].appId' -o tsv }
+    foreach ($appRegistrationName in $appRegistrations.Keys) {
+        $appId = $appRegistrations[$appRegistrationName]
+        if (-not $appId) { $appId = az ad app list --display-name $appRegistrationName --query '[0].appId' -o tsv }
 
-    if ([string]::IsNullOrWhiteSpace($appId)) {
-        "  no app registration named '$appRegistrationName'; nothing to delete"
-    }
-    else {
+        if ([string]::IsNullOrWhiteSpace($appId)) {
+            "  no app registration named '$appRegistrationName'; nothing to delete"
+            continue
+        }
+
         # Deleting the application usually takes its service principal with it, but not reliably
         # enough to leave a stale principal holding role assignments in the tenant.
         $spObjectId = az ad sp list --filter "appId eq '$appId'" --query '[0].id' -o tsv
@@ -329,7 +334,7 @@ if (-not $KeepAppRegistration) {
         }
 
         az ad app delete --id $appId
-        "  deleted app registration $appId"
+        "  deleted app registration $appRegistrationName ($appId)"
     }
 }
 

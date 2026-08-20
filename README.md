@@ -26,7 +26,7 @@ flowchart LR
     User(["User question<br/>naming a place<br/>or giving coordinates"])
 
     subgraph Foundry["Microsoft Foundry"]
-        Orch["geo-orchestrator<br/>hosted agent, gpt-4.1<br/>Agent Framework container"]
+        Orch["geo-orchestrator<br/>gpt-4.1, Agent Framework<br/>hosted here, or on App Service"]
 
         subgraph Res["Resolver: called first, alone"]
             P["place-resolver"]
@@ -64,6 +64,34 @@ flowchart LR
 The specialists never hold a key. The Foundry account's system-assigned managed identity requests a
 token for the gateway's audience, API Management validates it and pins the caller's object id, and
 only then adds the function host key. The key exists on one hop that the agents cannot see.
+
+### Where the orchestrator runs
+
+The orchestrator is an ordinary ASP.NET Core app either way. AgentHost serves the OpenAI Responses
+protocol at `/responses` whatever it is running on, so the binary is identical and only the address
+callers use changes.
+
+| | `FoundryHosted` | `LinuxAppService` |
+|---|---|---|
+| Runs on | Foundry Agent Service | Linux App Service behind API Management |
+| Runs as | the agent's own identity | a user-assigned identity granted Azure AI User on the account |
+| Callers reach | the Foundry agent endpoint | `https://<gateway>/orchestrator/responses` |
+| Published by | `azd deploy geo-orchestrator` | `dotnet publish` and zip deploy |
+
+`main.bicep` chooses from `environment().name` rather than from an argument, because the Agent
+Service is commercial-only today and the right answer is a property of the cloud. `-OrchestratorHost`
+overrides it in either direction, which is the only way to exercise the App Service path from
+commercial.
+
+Self-hosted, the App Service is not open to the internet. It requires an Entra token whose `oid` is
+the gateway's managed identity, and the gateway obtains that itself with
+`authentication-managed-identity` after validating the caller's own token against a separate
+audience. The two audiences are what stop a token minted for one hop being replayed against the
+other, and a request that skipped the gateway cannot satisfy the second check at all.
+
+Authorizing by caller identity rather than by source address is deliberate. An address allowlist
+reads as equivalent but fails open: the gateway's public IP is not exposed on every API Management
+tier, and an unresolved address leaves the app reachable by anyone.
 
 ### What one question does
 
@@ -103,7 +131,9 @@ is told not to describe where data came from, so the statement has one author an
 ### How it gets deployed
 
 Two azd projects, because one project cannot use both providers. The specialists are published by a
-postdeploy hook so they are never pointed at a gateway that has no code behind it yet.
+postdeploy hook so they are never pointed at a gateway that has no code behind it yet. The App
+Service path is not an azd service at all: azd deploys every service it is given on every run, and
+there is no conditional form of that, so publishing it is left to the deployment script.
 
 ```mermaid
 flowchart TB
@@ -114,10 +144,11 @@ flowchart TB
         OrchSrc["orchestrator/src/geo-orchestrator"]
     end
 
-    Pre["preprovision hook<br/>scripts/Initialize-AzdEnvironment.ps1<br/>Entra app registration"]
+    Pre["preprovision hook<br/>scripts/Initialize-AzdEnvironment.ps1<br/>Entra app registrations"]
     Root["azd up at the root<br/>bicep provider"]
     Hook["postdeploy hook<br/>agents/deploy-agents.ps1"]
-    Sub["azd deploy geo-orchestrator<br/>microsoft.foundry provider<br/>never azd provision"]
+    Sub["FoundryHosted:<br/>azd deploy geo-orchestrator<br/>microsoft.foundry provider<br/>never azd provision"]
+    Zip["LinuxAppService:<br/>dotnet publish, zip deploy<br/>run by New-Deployment.ps1"]
 
     Pre --> Root
     Infra --> Root
@@ -126,6 +157,7 @@ flowchart TB
     Defs --> Hook
     Hook --> Agents["5 prompt agents<br/>Foundry returns the existing<br/>version when nothing changed"]
     OrchSrc --> Sub --> Hosted["geo-orchestrator hosted agent"]
+    OrchSrc --> Zip --> AppSvc["orchestrator App Service<br/>reachable only through the gateway"]
 ```
 
 ### Adding an endpoint
@@ -180,6 +212,7 @@ different subscription or tenant means different arguments rather than a changed
 | Cloud | `-Cloud` | `AzureCloud` |
 | Resource group | `-ResourceGroupName` | `rg-<environment name>` |
 | APIM tier | `-ApimSku` | `Developer` |
+| Orchestrator host | `-OrchestratorHost` | `Auto`, resolved from the cloud |
 | Existing gateway audience | `-GeoApiAudience` | created by the preprovision hook |
 
 Everything else — `GEO_API_BASE_URL`, `FOUNDRY_PROJECT_ENDPOINT`, the function app name, the
@@ -191,12 +224,15 @@ Both CLIs have to be signed in to the same tenant, which is why the script does 
 provisions, but the preprovision and postdeploy hooks call `az`. Signing in to only one produces a
 deployment that fails at a hook rather than at the start.
 
-Two things are not ARM resources and so are handled outside the template. The Entra app registration
-whose App ID URI the gateway validates is created by the preprovision hook, which needs the Entra
-Application Developer role the first time it runs in a tenant; pass `-GeoApiAudience` to reuse one
-that already exists instead. And Foundry data-plane access is not implied by subscription
-Owner, so the template grants the deploying principal Foundry User and Foundry Project Manager on the
-account — without those the postdeploy hook cannot publish the specialists.
+Two things are not ARM resources and so are handled outside the template. The two Entra app
+registrations whose App ID URIs the gateway validates — one for the geo API the specialists call,
+one for the orchestrator API in front of the App Service — are created by the preprovision hook,
+which needs the Entra Application Developer role the first time it runs in a tenant; pass
+`-GeoApiAudience` to reuse one that already exists instead. The orchestrator's app also exposes a
+`user_impersonation` scope and pre-authorizes the Azure CLI, so a signed-in user can call it without
+an administrator consenting to the API first. And Foundry data-plane access is not implied by
+subscription Owner, so the template grants the deploying principal Foundry User and Foundry Project
+Manager on the account — without those the postdeploy hook cannot publish the specialists.
 
 Budget for the wait. API Management Developer takes 30 to 45 minutes to provision and has no SLA. It
 is the cheapest tier that still supports the `rate-limit-by-key` policy this API applies; Consumption
@@ -237,29 +273,34 @@ model deployments fall back to `Standard`, which `gpt-4.1` and `gpt-4.1-mini` at
 so `-ApimSku Basicv2` is rejected outside commercial and the Developer tier's 30-to-45-minute
 provision applies.
 
-The open question is the Foundry Agent Service itself. Azure Maps, Azure OpenAI, API Management,
-Functions, and Entra are all present in US Gov Virginia, but the Agent Service region tables list no
-Gov regions, and the hosted orchestrator under `orchestrator/` depends on it. Confirm that before
-committing to a Gov deployment; the specialists and the gateway would work without it, the
-orchestrator would not.
+The Foundry Agent Service is the one component with no Gov presence. Azure Maps, Azure OpenAI, API
+Management, Functions, and Entra are all available in US Gov Virginia, but the Agent Service region
+tables list no Gov regions, and the hosted orchestrator depends on it. That is what the orchestrator
+host selection exists for: `main.bicep` resolves a Gov deployment to `LinuxAppService`, which runs
+the identical binary on an App Service behind the same gateway, so nothing else in this section
+needs a Gov variant. The specialists, the gateway, and the function app are unaffected either way.
 
 [scripts/Remove-Deployment.ps1](scripts/Remove-Deployment.ps1) is the reverse, and covers the four
-things `azd down` leaves behind: the Entra app registration, both local azd environments, and the
-soft-deleted Foundry account and API Management instance, which otherwise keep their names reserved
-and their model quota allocated against a redeploy of the same environment name.
+things `azd down` leaves behind: the Entra app registrations, both local azd environments, the agent
+identities Foundry mints per published agent, and the soft-deleted Foundry account and API Management
+instance, which otherwise keep their names reserved and their model quota allocated against a
+redeploy of the same environment name.
 
 ```powershell
 ./scripts/Remove-Deployment.ps1 -EnvironmentName geo-agents-dev
 ```
 
 It prompts before deleting anything; `-WhatIf` reports the target and stops, and `-Force` skips the
-prompt. Pass `-KeepAppRegistration` when the app was supplied through `-GeoApiAudience` rather than
+prompt. Pass `-KeepAppRegistration` when an app was supplied through `-GeoApiAudience` rather than
 created by the hook, or `-KeepEnvironmentFiles` to delete the Azure resources but keep the settings
 for a redeploy. `-Cloud` has to match the cloud the environment was deployed into. Rerunning is
 safe: anything already gone is reported and skipped.
 
-The orchestrator is a separate azd project under `orchestrator/` and is deployed after this one, with
-`FOUNDRY_PROJECT_ENDPOINT` and `AZURE_AI_MODEL_DEPLOYMENT_NAME` taken from the outputs above. Its
+The orchestrator is deployed after this one either way, with `FOUNDRY_PROJECT_ENDPOINT` and
+`AZURE_AI_MODEL_DEPLOYMENT_NAME` taken from the outputs above — as app settings on the App Service,
+or as the second azd environment described next.
+
+Under `FoundryHosted` it is a separate azd project under `orchestrator/`. Its
 own azd environment lives under `orchestrator/.azure`, and the script creates and populates it.
 
 Deploying the orchestrator makes azd record the Foundry account, the project id, the model
@@ -275,6 +316,9 @@ When it finishes, [orchestrator/ask.ps1](orchestrator/ask.ps1) is the smoke test
 ```powershell
 ./orchestrator/ask.ps1 -Message 'Conditions at 51.5072, -0.1276?' -Deployed
 ```
+
+It follows whichever host was deployed, reading the endpoint and the audience to request a token for
+out of the environment rather than taking either as an argument.
 
 ## API
 

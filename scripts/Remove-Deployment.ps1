@@ -363,7 +363,10 @@ if (-not $KeepAppRegistration) {
 
     foreach ($appRegistrationName in $appRegistrations.Keys) {
         Invoke-BestEffort "Deleting the app registration '$appRegistrationName'" {
+            # The cached appId can name an application an earlier run already deleted, so confirm
+            # it is still in the directory rather than reporting its absence as a failure.
             $appId = $appRegistrations[$appRegistrationName]
+            if ($appId) { $appId = az ad app list --filter "appId eq '$appId'" --query '[0].appId' -o tsv }
             if (-not $appId) { $appId = az ad app list --display-name $appRegistrationName --query '[0].appId' -o tsv }
 
             if ([string]::IsNullOrWhiteSpace($appId)) {
@@ -394,25 +397,36 @@ Write-Step 'Deleting Entra agent identities'
 $agentIdentityPrefix = if ($foundryAccountName -and $foundryProjectName) { "$foundryAccountName-$foundryProjectName-" } else { "aif-$EnvironmentName-" }
 $agentIdentityFilter = { $_.displayName -like "$agentIdentityPrefix*AgentIdentity*" }
 
-$agentPrincipals = @()
+# --all enumerates every principal in the tenant, so ask the directory to do the prefix match and
+# return only the two fields the deletions need. The quotes are part of the values because az is a
+# batch file: PowerShell leaves space-free arguments unquoted and cmd then reads the parentheses
+# and brackets as syntax of its own.
+$agentIdentityStartsWith = "`"startswith(displayName,'$agentIdentityPrefix')`""
+$agentIdentityQuery = '"[].{id:id,displayName:displayName}"'
+
+# Blueprints first: an application cannot be deleted through its own principal, and deleting it
+# takes that principal with it, so clearing them ahead of the principal sweep leaves the sweep with
+# only the per-agent identities, which have no application to be removed by.
 $agentApps = @()
-Invoke-BestEffort 'Listing the Entra agent identities' {
-    $script:agentPrincipals = @(az ad sp list --all --output json | ConvertFrom-Json | Where-Object $agentIdentityFilter)
-    $script:agentApps = @(az ad app list --all --output json | ConvertFrom-Json | Where-Object $agentIdentityFilter)
+Invoke-BestEffort 'Deleting the Entra agent identity blueprints' {
+    $script:agentApps = @(az ad app list --filter $agentIdentityStartsWith --query $agentIdentityQuery --output json | ConvertFrom-Json | Where-Object $agentIdentityFilter)
+    foreach ($app in $agentApps) {
+        if ([string]::IsNullOrWhiteSpace($app.id)) { continue }
+        az ad app delete --id $app.id 2>$null
+        if ($LASTEXITCODE -eq 0) { "  deleted blueprint $($app.displayName)" }
+        else { Write-Warning "Could not delete app registration '$($app.displayName)'." }
+    }
 }
 
-# Principals first: deleting an application takes its own principal with it, but the per-agent
-# identities have no application to be removed by.
-foreach ($principal in $agentPrincipals) {
-    az ad sp delete --id $principal.id 2>$null
-    if ($LASTEXITCODE -eq 0) { "  deleted principal $($principal.displayName)" }
-    else { Write-Warning "Could not delete service principal '$($principal.displayName)'." }
-}
-
-foreach ($app in $agentApps) {
-    az ad app delete --id $app.id 2>$null
-    if ($LASTEXITCODE -eq 0) { "  deleted blueprint $($app.displayName)" }
-    else { Write-Warning "Could not delete app registration '$($app.displayName)'." }
+$agentPrincipals = @()
+Invoke-BestEffort 'Deleting the Entra agent identity principals' {
+    $script:agentPrincipals = @(az ad sp list --filter $agentIdentityStartsWith --query $agentIdentityQuery --output json | ConvertFrom-Json | Where-Object $agentIdentityFilter)
+    foreach ($principal in $agentPrincipals) {
+        if ([string]::IsNullOrWhiteSpace($principal.id)) { continue }
+        az ad sp delete --id $principal.id 2>$null
+        if ($LASTEXITCODE -eq 0) { "  deleted principal $($principal.displayName)" }
+        else { Write-Warning "Could not delete service principal '$($principal.displayName)'." }
+    }
 }
 
 if ($agentPrincipals.Count -eq 0 -and $agentApps.Count -eq 0) { "  no agent identities matching '$agentIdentityPrefix*'" }

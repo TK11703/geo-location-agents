@@ -10,23 +10,34 @@ public sealed class AzureMapsGeocodeService(HttpClient httpClient, IConfiguratio
     : IGeocodeService
 {
     private const string GeocodingApiVersion = "2026-01-01";
+    private const string LegacySearchApiVersion = "1.0";
 
     public async Task<GeocodeResult> GetCoordinatesAsync(
         GeocodeQuery query,
         CancellationToken cancellationToken)
     {
+        var useLegacyApis = AzureMapsApiProfile.UseLegacyApis(configuration);
         // Azure Maps rejects countryRegion outright when it is sent alongside a free-form query, so
         // the restriction is applied to the candidates below instead of upstream.
-        var uri = QueryHelpers.AddQueryString(
-            $"{GetEndpoint()}/geocode",
-            new Dictionary<string, string?>
-            {
-                ["api-version"] = GeocodingApiVersion,
-                ["query"] = query.Text,
-                ["top"] = query.Top.ToString(CultureInfo.InvariantCulture)
-            });
+        var uri = useLegacyApis
+            ? QueryHelpers.AddQueryString(
+                $"{GetEndpoint()}/search/address/json",
+                new Dictionary<string, string?>
+                {
+                    ["api-version"] = LegacySearchApiVersion,
+                    ["query"] = query.Text,
+                    ["limit"] = query.Top.ToString(CultureInfo.InvariantCulture)
+                })
+            : QueryHelpers.AddQueryString(
+                $"{GetEndpoint()}/geocode",
+                new Dictionary<string, string?>
+                {
+                    ["api-version"] = GeocodingApiVersion,
+                    ["query"] = query.Text,
+                    ["top"] = query.Top.ToString(CultureInfo.InvariantCulture)
+                });
 
-        using var message = CreateRequest(uri);
+        using var message = CreateRequest(uri, useLegacyApis);
         using var response = await httpClient.SendAsync(message, cancellationToken);
 
         if (!response.IsSuccessStatusCode)
@@ -39,22 +50,78 @@ public sealed class AzureMapsGeocodeService(HttpClient httpClient, IConfiguratio
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
 
-        if (!document.RootElement.TryGetProperty("features", out var features)
+        var candidates = useLegacyApis
+            ? ReadLegacyCandidates(document.RootElement, query.CountryRegion)
+            : ReadCandidates(document.RootElement, query.CountryRegion);
+
+        return new GeocodeResult(query.Text, candidates.Count > 0, candidates);
+    }
+
+    private static List<GeocodeCandidate> ReadCandidates(JsonElement root, string? countryRegion)
+    {
+        if (!root.TryGetProperty("features", out var features)
             || features.ValueKind != JsonValueKind.Array)
         {
-            return new GeocodeResult(query.Text, HasMatch: false, []);
+            return [];
         }
 
         var candidates = new List<GeocodeCandidate>(features.GetArrayLength());
         foreach (var feature in features.EnumerateArray())
         {
-            if (ReadCandidate(feature) is { } candidate && IsInCountry(candidate, query.CountryRegion))
+            if (ReadCandidate(feature) is { } candidate && IsInCountry(candidate, countryRegion))
             {
                 candidates.Add(candidate);
             }
         }
 
-        return new GeocodeResult(query.Text, candidates.Count > 0, candidates);
+        return candidates;
+    }
+
+    private static List<GeocodeCandidate> ReadLegacyCandidates(JsonElement root, string? countryRegion)
+    {
+        if (!root.TryGetProperty("results", out var results)
+            || results.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var candidates = new List<GeocodeCandidate>(results.GetArrayLength());
+        foreach (var result in results.EnumerateArray())
+        {
+            if (ReadLegacyCandidate(result) is { } candidate && IsInCountry(candidate, countryRegion))
+            {
+                candidates.Add(candidate);
+            }
+        }
+
+        return candidates;
+    }
+
+    // Search v1 scores are only comparable within a single result set, so they cannot be reported as
+    // the absolute confidence band the newer geocoder returns and the field is left unset.
+    private static GeocodeCandidate? ReadLegacyCandidate(JsonElement result)
+    {
+        if (result.ValueKind != JsonValueKind.Object
+            || !result.TryGetProperty("position", out var position)
+            || position.ValueKind != JsonValueKind.Object
+            || !position.TryGetProperty("lat", out var latitude)
+            || !position.TryGetProperty("lon", out var longitude))
+        {
+            return null;
+        }
+
+        var address = result.TryGetProperty("address", out var addressElement)
+            ? addressElement
+            : default;
+
+        return new GeocodeCandidate(
+            latitude.GetDouble(),
+            longitude.GetDouble(),
+            ReadString(address, "freeformAddress"),
+            ReadString(address, "municipality"),
+            ReadString(address, "countryCode"),
+            ReadString(result, "type"),
+            null);
     }
 
     // A candidate whose country the provider did not report is kept rather than guessed at, so the
@@ -122,7 +189,7 @@ public sealed class AzureMapsGeocodeService(HttpClient httpClient, IConfiguratio
         return value.GetString();
     }
 
-    private HttpRequestMessage CreateRequest(string uri)
+    private HttpRequestMessage CreateRequest(string uri, bool useLegacyApis)
     {
         var subscriptionKey = configuration["AzureMaps:SubscriptionKey"];
         if (string.IsNullOrWhiteSpace(subscriptionKey))
@@ -132,10 +199,9 @@ public sealed class AzureMapsGeocodeService(HttpClient httpClient, IConfiguratio
 
         var message = new HttpRequestMessage(HttpMethod.Get, uri);
         message.Headers.Add("subscription-key", subscriptionKey);
-        message.Headers.Accept.ParseAdd("application/geo+json");
+        message.Headers.Accept.ParseAdd(useLegacyApis ? "application/json" : "application/geo+json");
         return message;
     }
 
-    private string GetEndpoint() =>
-        (configuration["AzureMaps:Endpoint"] ?? "https://atlas.microsoft.com").TrimEnd('/');
+    private string GetEndpoint() => AzureMapsApiProfile.GetEndpoint(configuration);
 }

@@ -40,6 +40,7 @@ public class AzureMapsReverseGeocodeServiceTests
         var query = QueryHelpers.ParseQuery(handler.Requests.Single().Uri.Query);
         Assert.Equal("-122.3321,47.6062", query["coordinates"]);
         Assert.Equal("2026-01-01", query["api-version"]);
+        Assert.False(query.ContainsKey("top"));
     }
 
     [Fact]

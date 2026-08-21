@@ -15,6 +15,7 @@ public sealed class AzureMapsRouteService(HttpClient httpClient, IConfiguration 
 {
     private const string RouteApiVersion = "2025-01-01";
     private const string RenderApiVersion = "2024-04-01";
+    private const string LegacyRouteApiVersion = "1.0";
     private const int MaxLocationsPerPath = 100;
     private const int MaxPathParameters = 10;
     private const int MaxRenderedLocations = 200;
@@ -31,7 +32,7 @@ public sealed class AzureMapsRouteService(HttpClient httpClient, IConfiguration 
         CancellationToken cancellationToken)
     {
         using var route = await CalculateRouteAsync(request, cancellationToken);
-        var coordinates = ReduceCoordinates(ExtractRouteCoordinates(route.RootElement));
+        var coordinates = ReduceCoordinates(ExtractCoordinates(route.RootElement));
         return await RenderRouteAsync(coordinates, request, cancellationToken);
     }
 
@@ -46,6 +47,34 @@ public sealed class AzureMapsRouteService(HttpClient httpClient, IConfiguration 
     private async Task<JsonDocument> CalculateRouteAsync(
         RouteCalculationRequest request,
         CancellationToken cancellationToken)
+    {
+        using var message = UseLegacyApis
+            ? CreateLegacyRouteRequest(request)
+            : CreateRouteRequest(request);
+
+        using var response = await httpClient.SendAsync(message, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new AzureMapsException(
+                "Azure Maps could not calculate the requested route.",
+                response.StatusCode);
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        var coordinates = ExtractCoordinates(document.RootElement);
+        if (coordinates.Count < 2)
+        {
+            document.Dispose();
+            throw new AzureMapsException(
+                "Azure Maps returned no route geometry.",
+                HttpStatusCode.BadGateway);
+        }
+
+        return document;
+    }
+
+    private HttpRequestMessage CreateRouteRequest(RouteCalculationRequest request)
     {
         var uri = QueryHelpers.AddQueryString(
             $"{GetEndpoint()}/route/directions",
@@ -64,32 +93,82 @@ public sealed class AzureMapsRouteService(HttpClient httpClient, IConfiguration 
             ["routePath", "itinerary"],
             request.VehicleSpec);
 
-        using var message = CreateRequest(HttpMethod.Post, uri, "application/geo+json");
+        var message = CreateRequest(HttpMethod.Post, uri, "application/geo+json");
         message.Content = JsonContent.Create(
             routeRequest,
             new MediaTypeHeaderValue("application/geo+json"),
             JsonOptions);
+        return message;
+    }
 
-        using var response = await httpClient.SendAsync(message, cancellationToken);
-        if (!response.IsSuccessStatusCode)
+    private HttpRequestMessage CreateLegacyRouteRequest(RouteCalculationRequest request)
+    {
+        var parameters = new Dictionary<string, string?>
         {
-            throw new AzureMapsException(
-                "Azure Maps could not calculate the requested route.",
-                response.StatusCode);
+            ["api-version"] = LegacyRouteApiVersion,
+            // Route v1 orders each waypoint latitude first, the opposite of the GeoJSON body v2 takes.
+            ["query"] = FormattableString.Invariant(
+                $"{request.OriginLatitude},{request.OriginLongitude}:{request.DestinationLatitude},{request.DestinationLongitude}"),
+            ["travelMode"] = request.VehicleSpec is null ? request.TravelMode : "truck",
+            ["routeRepresentation"] = "polyline"
+        };
+
+        var uri = QueryHelpers.AddQueryString($"{GetEndpoint()}/route/directions/json", parameters);
+        foreach (var (name, value) in GetLegacyVehicleParameters(request.VehicleSpec))
+        {
+            uri = QueryHelpers.AddQueryString(uri, name, value);
         }
 
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-        var coordinates = ExtractRouteCoordinates(document.RootElement);
-        if (coordinates.Count < 2)
+        return CreateRequest(HttpMethod.Get, uri, "application/json");
+    }
+
+    // Route v1 has no axle-count restriction, so AxleCount is not expressible and is left out.
+    private static IEnumerable<(string Name, string Value)> GetLegacyVehicleParameters(TruckVehicleSpec? spec)
+    {
+        if (spec is null)
         {
-            document.Dispose();
-            throw new AzureMapsException(
-                "Azure Maps returned no route geometry.",
-                HttpStatusCode.BadGateway);
+            yield break;
         }
 
-        return document;
+        if (spec.AxleWeight is { } axleWeight)
+        {
+            yield return ("vehicleAxleWeight", axleWeight.ToString(CultureInfo.InvariantCulture));
+        }
+
+        if (spec.Weight is { } weight)
+        {
+            yield return ("vehicleWeight", weight.ToString(CultureInfo.InvariantCulture));
+        }
+
+        if (spec.Height is { } height)
+        {
+            yield return ("vehicleHeight", height.ToString(CultureInfo.InvariantCulture));
+        }
+
+        if (spec.Width is { } width)
+        {
+            yield return ("vehicleWidth", width.ToString(CultureInfo.InvariantCulture));
+        }
+
+        if (spec.Length is { } length)
+        {
+            yield return ("vehicleLength", length.ToString(CultureInfo.InvariantCulture));
+        }
+
+        if (spec.MaxSpeed is { } maxSpeed)
+        {
+            yield return ("vehicleMaxSpeed", maxSpeed.ToString(CultureInfo.InvariantCulture));
+        }
+
+        if (spec.IsVehicleCommercial is { } isCommercial)
+        {
+            yield return ("vehicleCommercial", isCommercial ? "true" : "false");
+        }
+
+        foreach (var loadType in spec.LoadType ?? [])
+        {
+            yield return ("vehicleLoadType", loadType);
+        }
     }
 
     private async Task<MapImage> RenderRouteAsync(
@@ -147,6 +226,9 @@ public sealed class AzureMapsRouteService(HttpClient httpClient, IConfiguration 
         _ => travelMode
     };
 
+    private List<RouteCoordinate> ExtractCoordinates(JsonElement response) =>
+        UseLegacyApis ? ExtractLegacyRouteCoordinates(response) : ExtractRouteCoordinates(response);
+
     private static List<RouteCoordinate> ExtractRouteCoordinates(JsonElement response)
     {
         var coordinates = new List<RouteCoordinate>();
@@ -173,6 +255,41 @@ public sealed class AzureMapsRouteService(HttpClient httpClient, IConfiguration 
                     coordinates.Add(new RouteCoordinate(
                         position[0].GetDouble(),
                         position[1].GetDouble()));
+                }
+            }
+        }
+
+        return coordinates;
+    }
+
+    private static List<RouteCoordinate> ExtractLegacyRouteCoordinates(JsonElement response)
+    {
+        var coordinates = new List<RouteCoordinate>();
+        if (!response.TryGetProperty("routes", out var routes)
+            || routes.ValueKind != JsonValueKind.Array)
+        {
+            return coordinates;
+        }
+
+        foreach (var route in routes.EnumerateArray())
+        {
+            if (!route.TryGetProperty("legs", out var legs))
+            {
+                continue;
+            }
+
+            foreach (var leg in legs.EnumerateArray())
+            {
+                if (!leg.TryGetProperty("points", out var points))
+                {
+                    continue;
+                }
+
+                foreach (var point in points.EnumerateArray())
+                {
+                    coordinates.Add(new RouteCoordinate(
+                        point.GetProperty("longitude").GetDouble(),
+                        point.GetProperty("latitude").GetDouble()));
                 }
             }
         }
@@ -264,8 +381,9 @@ public sealed class AzureMapsRouteService(HttpClient httpClient, IConfiguration 
         return message;
     }
 
-    private string GetEndpoint() =>
-        (configuration["AzureMaps:Endpoint"] ?? "https://atlas.microsoft.com").TrimEnd('/');
+    private string GetEndpoint() => AzureMapsApiProfile.GetEndpoint(configuration);
+
+    private bool UseLegacyApis => AzureMapsApiProfile.UseLegacyApis(configuration);
 
     private sealed record GeoJsonFeatureCollection(
         string Type,

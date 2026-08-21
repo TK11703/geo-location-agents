@@ -161,6 +161,5 @@ public sealed class AzureMapsTrafficService(HttpClient httpClient, IConfiguratio
         return message;
     }
 
-    private string GetEndpoint() =>
-        (configuration["AzureMaps:Endpoint"] ?? "https://atlas.microsoft.com").TrimEnd('/');
+    private string GetEndpoint() => AzureMapsApiProfile.GetEndpoint(configuration);
 }

@@ -11,6 +11,7 @@ public sealed class AzureMapsService(HttpClient httpClient, IConfiguration confi
 {
     private const string GeocodingApiVersion = "2026-01-01";
     private const string RenderApiVersion = "2024-04-01";
+    private const string LegacySearchApiVersion = "1.0";
 
     public async Task<MapImage> GetMapImageAsync(
         MapRenderRequest request,
@@ -51,18 +52,31 @@ public sealed class AzureMapsService(HttpClient httpClient, IConfiguration confi
         return new MapImage(content, contentType);
     }
 
-    private async Task<Coordinates> GeocodeAsync(string city, CancellationToken cancellationToken)
+    // Geocoding v2 is absent from Azure Government, so the city lookup falls back to Search v1 there.
+    private async Task<Coordinates> GeocodeAsync(
+        string city,
+        CancellationToken cancellationToken)
     {
-        var uri = QueryHelpers.AddQueryString(
-            $"{GetEndpoint()}/geocode",
-            new Dictionary<string, string?>
-            {
-                ["api-version"] = GeocodingApiVersion,
-                ["query"] = city,
-                ["top"] = "1"
-            });
+        var useLegacyApis = AzureMapsApiProfile.UseLegacyApis(configuration);
+        var uri = useLegacyApis
+            ? QueryHelpers.AddQueryString(
+                $"{GetEndpoint()}/search/address/json",
+                new Dictionary<string, string?>
+                {
+                    ["api-version"] = LegacySearchApiVersion,
+                    ["query"] = city,
+                    ["limit"] = "1"
+                })
+            : QueryHelpers.AddQueryString(
+                $"{GetEndpoint()}/geocode",
+                new Dictionary<string, string?>
+                {
+                    ["api-version"] = GeocodingApiVersion,
+                    ["query"] = city,
+                    ["top"] = "1"
+                });
 
-        using var message = CreateRequest(uri, "application/geo+json");
+        using var message = CreateRequest(uri, useLegacyApis ? "application/json" : "application/geo+json");
         using var response = await httpClient.SendAsync(message, cancellationToken);
 
         if (!response.IsSuccessStatusCode)
@@ -72,6 +86,18 @@ public sealed class AzureMapsService(HttpClient httpClient, IConfiguration confi
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+
+        if (useLegacyApis)
+        {
+            if (!document.RootElement.TryGetProperty("results", out var results)
+                || results.GetArrayLength() == 0)
+            {
+                throw new MapLocationNotFoundException(city);
+            }
+
+            var position = results[0].GetProperty("position");
+            return new Coordinates(position.GetProperty("lon").GetDouble(), position.GetProperty("lat").GetDouble());
+        }
 
         if (!document.RootElement.TryGetProperty("features", out var features)
             || features.GetArrayLength() == 0)
@@ -97,8 +123,7 @@ public sealed class AzureMapsService(HttpClient httpClient, IConfiguration confi
         return message;
     }
 
-    private string GetEndpoint() =>
-        (configuration["AzureMaps:Endpoint"] ?? "https://atlas.microsoft.com").TrimEnd('/');
+    private string GetEndpoint() => AzureMapsApiProfile.GetEndpoint(configuration);
 
     private sealed record Coordinates(double Longitude, double Latitude);
 }

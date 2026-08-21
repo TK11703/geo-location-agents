@@ -1,5 +1,6 @@
-// Backend for the geo API: Log Analytics, storage, Flex Consumption plan, App Insights, and the
-// function app. Everything here is created by this template.
+// Backend for the geo API: Log Analytics, storage, App Insights, Azure Maps, and the function app.
+// The plan and the site live in a per-tier module, because Flex Consumption and Dedicated configure
+// the same app through different property bags rather than through different values.
 
 @description('Azure region for all resources in this group.')
 param location string
@@ -32,12 +33,30 @@ param nwsUserAgent string
 
 param mapsAccountName string
 
+@description('Hosting tier for the function app. Supplied by main.bicep, which resolves it for the target cloud.')
+@allowed([
+  'FlexConsumption'
+  'Dedicated'
+])
+param functionPlanTier string = 'FlexConsumption'
+
+@description('App Service tier used when functionPlanTier is Dedicated.')
+param functionAppServiceSku string = 'B1'
+
+@description('Identity the Dedicated host runs as. Unused on Flex Consumption.')
+param functionIdentityName string
+
 @description('azd matches this to the service in azure.yaml when deploying code.')
 param serviceName string = 'api'
 
 param tags object = {}
 
+var flexConsumption = functionPlanTier == 'FlexConsumption'
+
 var storageBlobDataContributor = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+var storageBlobDataOwner = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b')
+var storageQueueDataContributor = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88')
+var storageTableDataContributor = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')
 
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logAnalyticsWorkspaceName
@@ -63,8 +82,9 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: true
     allowBlobPublicAccess: false
-    // The host and the deployment package still authenticate with a connection string.
-    allowSharedKeyAccess: true
+    // Only Flex Consumption needs this: its host and deployment package authenticate with a
+    // connection string, and it has no identity-based equivalent for the deployment container.
+    allowSharedKeyAccess: flexConsumption
     networkAcls: {
       defaultAction: 'Allow'
       bypass: 'AzureServices'
@@ -85,20 +105,6 @@ resource deploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/con
 resource mapImageContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
   parent: blobService
   name: mapImageContainerName
-}
-
-resource hostingPlan 'Microsoft.Web/serverfarms@2024-04-01' = {
-  name: hostingPlanName
-  location: location
-  tags: tags
-  kind: 'functionapp'
-  sku: {
-    name: 'FC1'
-    tier: 'FlexConsumption'
-  }
-  properties: {
-    reserved: true
-  }
 }
 
 resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
@@ -130,106 +136,115 @@ resource maps 'Microsoft.Maps/accounts@2023-06-01' = {
 
 var storageConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storage.name};AccountKey=${storage.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
 
-resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
-  name: functionAppName
+// The app's own configuration, identical on either plan. Each module adds the host settings its
+// plan requires on top of this.
+var appSettings = {
+  APPLICATIONINSIGHTS_CONNECTION_STRING: appInsights.properties.ConnectionString
+  AzureMaps__Endpoint: azureMapsEndpoint
+  AzureMaps__SubscriptionKey: maps.listKeys().primaryKey
+  Elevation__Endpoint: elevationEndpoint
+  Nws__Endpoint: nwsEndpoint
+  Nws__UserAgent: nwsUserAgent
+  Storage__MapImageContainer: mapImageContainerName
+  Storage__MapImageUrlMinutes: string(mapImageUrlMinutes)
+  // Presence of this switches the app from a connection string to managed identity, which is what
+  // makes the returned image URLs user-delegation SAS rather than account-key SAS.
+  Storage__MapImageServiceUri: storage.properties.primaryEndpoints.blob
+}
+
+// Exists before the site, because the host needs its storage roles at first start and a
+// system-assigned identity cannot be granted anything until the site it belongs to exists.
+resource functionIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = if (!flexConsumption) {
+  name: functionIdentityName
   location: location
-  tags: union(tags, { 'azd-service-name': serviceName })
-  kind: 'functionapp,linux'
-  identity: {
-    type: 'SystemAssigned'
-  }
+  tags: tags
+}
+
+// Blob Data Owner rather than Contributor: it carries generateUserDelegationKey, which the app
+// needs to sign map image URLs, on top of the container access the host needs for its locks.
+resource hostBlobOwner 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!flexConsumption) {
+  scope: storage
+  name: guid(storage.id, functionIdentityName, storageBlobDataOwner)
   properties: {
-    serverFarmId: hostingPlan.id
-    httpsOnly: true
-    functionAppConfig: {
-      deployment: {
-        storage: {
-          type: 'blobContainer'
-          value: '${storage.properties.primaryEndpoints.blob}${deploymentContainerName}'
-          authentication: {
-            type: 'StorageAccountConnectionString'
-            storageAccountConnectionStringName: 'DEPLOYMENT_STORAGE_CONNECTION_STRING'
-          }
-        }
-      }
-      runtime: {
-        name: 'dotnet-isolated'
-        version: '10.0'
-      }
-      scaleAndConcurrency: {
-        instanceMemoryMB: 2048
-        maximumInstanceCount: 100
-      }
-    }
-    siteConfig: {
-      // Flex Consumption takes runtime and version from functionAppConfig, and rejects the
-      // FUNCTIONS_WORKER_RUNTIME / FUNCTIONS_EXTENSION_VERSION settings older plans require.
-      appSettings: [
-        {
-          name: 'AzureWebJobsStorage'
-          value: storageConnectionString
-        }
-        {
-          name: 'DEPLOYMENT_STORAGE_CONNECTION_STRING'
-          value: storageConnectionString
-        }
-        {
-          name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-          value: appInsights.properties.ConnectionString
-        }
-        {
-          name: 'AzureMaps__Endpoint'
-          value: azureMapsEndpoint
-        }
-        {
-          name: 'AzureMaps__SubscriptionKey'
-          value: maps.listKeys().primaryKey
-        }
-        {
-          name: 'Elevation__Endpoint'
-          value: elevationEndpoint
-        }
-        {
-          name: 'Nws__Endpoint'
-          value: nwsEndpoint
-        }
-        {
-          name: 'Nws__UserAgent'
-          value: nwsUserAgent
-        }
-        {
-          name: 'Storage__MapImageContainer'
-          value: mapImageContainerName
-        }
-        {
-          name: 'Storage__MapImageUrlMinutes'
-          value: string(mapImageUrlMinutes)
-        }
-        {
-          // Presence of this switches the app from a connection string to managed identity,
-          // which is what makes the returned image URLs user-delegation SAS rather than account-key SAS.
-          name: 'Storage__MapImageServiceUri'
-          value: storage.properties.primaryEndpoints.blob
-        }
-      ]
-    }
+    principalId: functionIdentity!.properties.principalId
+    roleDefinitionId: storageBlobDataOwner
+    principalType: 'ServicePrincipal'
   }
 }
 
-// Covers generateUserDelegationKey, so no separate Storage Blob Delegator assignment is needed.
-resource blobContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource hostQueueContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!flexConsumption) {
   scope: storage
-  name: guid(storage.id, functionApp.id, storageBlobDataContributor)
+  name: guid(storage.id, functionIdentityName, storageQueueDataContributor)
   properties: {
-    principalId: functionApp.identity.principalId
+    principalId: functionIdentity!.properties.principalId
+    roleDefinitionId: storageQueueDataContributor
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource hostTableContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!flexConsumption) {
+  scope: storage
+  name: guid(storage.id, functionIdentityName, storageTableDataContributor)
+  properties: {
+    principalId: functionIdentity!.properties.principalId
+    roleDefinitionId: storageTableDataContributor
+    principalType: 'ServicePrincipal'
+  }
+}
+
+module functionFlex 'function-flex.bicep' = if (flexConsumption) {
+  name: 'function-flex'
+  params: {
+    name: functionAppName
+    planName: hostingPlanName
+    location: location
+    tags: tags
+    serviceName: serviceName
+    deploymentStorageUri: '${storage.properties.primaryEndpoints.blob}${deploymentContainerName}'
+    storageConnectionString: storageConnectionString
+    appSettings: appSettings
+  }
+}
+
+module functionDedicated 'function-dedicated.bicep' = if (!flexConsumption) {
+  name: 'function-dedicated'
+  params: {
+    name: functionAppName
+    planName: hostingPlanName
+    location: location
+    tags: tags
+    serviceName: serviceName
+    sku: functionAppServiceSku
+    identityResourceId: functionIdentity!.id
+    identityClientId: functionIdentity!.properties.clientId
+    storageBlobUri: storage.properties.primaryEndpoints.blob
+    storageQueueUri: storage.properties.primaryEndpoints.queue
+    storageTableUri: storage.properties.primaryEndpoints.table
+    appSettings: appSettings
+  }
+  dependsOn: [
+    hostBlobOwner
+    hostQueueContributor
+    hostTableContributor
+  ]
+}
+
+// Covers generateUserDelegationKey, so no separate Storage Blob Delegator assignment is needed.
+// The id is derived rather than read from the module, because a resource name cannot depend on
+// another deployment's output.
+resource siteBlobContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (flexConsumption) {
+  scope: storage
+  name: guid(storage.id, resourceId('Microsoft.Web/sites', functionAppName), storageBlobDataContributor)
+  properties: {
+    principalId: functionFlex!.outputs.principalId
     roleDefinitionId: storageBlobDataContributor
     principalType: 'ServicePrincipal'
   }
 }
 
-output functionAppName string = functionApp.name
-output functionAppPrincipalId string = functionApp.identity.principalId
-output functionAppApiUrl string = 'https://${functionApp.properties.defaultHostName}/api'
+output functionAppName string = functionAppName
+output functionAppPrincipalId string = flexConsumption ? functionFlex!.outputs.principalId : functionIdentity!.properties.principalId
+output functionAppApiUrl string = 'https://${flexConsumption ? functionFlex!.outputs.defaultHostName : functionDedicated!.outputs.defaultHostName}/api'
 output mapsAccountName string = maps.name
 output logAnalyticsWorkspaceId string = logAnalytics.id
 

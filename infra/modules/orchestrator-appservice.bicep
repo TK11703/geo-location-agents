@@ -17,6 +17,9 @@ param identityClientId string
 param foundryProjectEndpoint string
 param modelDeploymentName string
 
+@description('Foundry data-plane audience for this cloud. The client libraries hard-code the commercial one.')
+param foundryTokenAudience string
+
 @secure()
 @description('App Insights the function app already reports to, so both halves of a request land in one workspace.')
 param appInsightsConnectionString string = ''
@@ -99,6 +102,10 @@ resource site 'Microsoft.Web/sites@2024-04-01' = {
           {
             name: 'AZURE_AI_MODEL_DEPLOYMENT_NAME'
             value: modelDeploymentName
+          }
+          {
+            name: 'FOUNDRY_TOKEN_AUDIENCE'
+            value: foundryTokenAudience
           }
         ],
         // AgentHost wires its own telemetry off this one setting, which is why the app carries no

@@ -33,7 +33,9 @@
     collide with anything left soft-deleted.
 
     Rerunning is safe. Anything already deleted is reported and skipped, so this can be used to
-    finish a teardown that failed partway through.
+    finish a teardown that failed partway through. It will also get that far: every step is best
+    effort, because each one is cleaning up something already orphaned. A step that fails warns,
+    the steps after it still run, and everything that failed is listed again at the end.
 
 .PARAMETER EnvironmentName
     Root azd environment to remove. Defaults to whichever one azd currently has selected.
@@ -92,6 +94,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# PowerShell 7.4 turns a non-zero native exit code into a terminating error by default. This script
+# handles exit codes itself: Invoke-Native throws deliberately, and the probes below treat a
+# non-zero exit as "not found" and carry on. Leaving it on would turn every probe into an abort.
+$PSNativeCommandUseErrorActionPreference = $false
+
 # capabilityHosts is preview-only and is not listed by `az provider show`, so the version is fixed
 # here rather than discovered.
 $capabilityHostApiVersion = '2025-10-01-preview'
@@ -111,6 +118,22 @@ function Invoke-Native {
     param([string]$Command, [string[]]$Arguments)
     & $Command @Arguments
     if ($LASTEXITCODE -ne 0) { throw "$Command $($Arguments -join ' ') failed with exit code $LASTEXITCODE." }
+}
+
+$teardownFailures = [System.Collections.Generic.List[string]]::new()
+
+# Each deletion step is independent cleanup of something already orphaned, so a failure in one is a
+# reason to warn rather than a reason to abandon the others.
+function Invoke-BestEffort {
+    param([string]$Description, [scriptblock]$Action, [string]$Hint)
+    try {
+        & $Action
+    }
+    catch {
+        Write-Warning "$Description failed: $($_.Exception.Message)"
+        if ($Hint) { Write-Warning "  $Hint" }
+        $teardownFailures.Add($Description)
+    }
 }
 
 function Get-AzdEnvValues {
@@ -258,11 +281,15 @@ else {
     else {
         $armEndpoint = (az cloud show --query endpoints.resourceManager -o tsv).TrimEnd('/')
         $accountUrl = "$armEndpoint/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.CognitiveServices/accounts/$foundryAccountName"
-        Remove-CapabilityHost -AccountUrl $accountUrl -AccountName $foundryAccountName -TimeoutMinutes $CapabilityHostTimeoutMinutes
+        Invoke-BestEffort "Removing the capability host on '$foundryAccountName'" {
+            Remove-CapabilityHost -AccountUrl $accountUrl -AccountName $foundryAccountName -TimeoutMinutes $CapabilityHostTimeoutMinutes
+        }
     }
 }
 
 Write-Step 'Deleting Azure resources'
+
+$failuresBeforeDelete = $teardownFailures.Count
 
 if (-not $groupExists) {
     "  resource group '$ResourceGroupName' does not exist; nothing to delete"
@@ -270,14 +297,20 @@ if (-not $groupExists) {
 elseif (Test-AzdEnv -Name $EnvironmentName -Cwd $repoRoot) {
     # --purge is what clears the soft-delete state of API Management and the Foundry account, which
     # otherwise keep both names reserved and the model quota allocated.
-    Invoke-Native azd @('down', '--cwd', $repoRoot, '--environment', $EnvironmentName, '--force', '--purge')
+    Invoke-BestEffort 'Deleting the Azure resources' {
+        Invoke-Native azd @('down', '--cwd', $repoRoot, '--environment', $EnvironmentName, '--force', '--purge')
+    }
 }
 else {
     # No local environment to drive azd with. The template is subscription scoped and creates the
     # group, so deleting the group is equivalent for everything inside it.
     "  no local azd environment '$EnvironmentName'; deleting the resource group directly"
-    Invoke-Native az @('group', 'delete', '--name', $ResourceGroupName, '--yes')
+    Invoke-BestEffort "Deleting resource group '$ResourceGroupName'" {
+        Invoke-Native az @('group', 'delete', '--name', $ResourceGroupName, '--yes')
+    }
 }
+
+$resourcesDeleted = $teardownFailures.Count -eq $failuresBeforeDelete
 
 Write-Step 'Purging soft-deleted resources'
 
@@ -285,7 +318,11 @@ Write-Step 'Purging soft-deleted resources'
 # accounts from unrelated work, and those are somebody else's to restore.
 $purged = 0
 
-$deletedAccounts = az cognitiveservices account list-deleted --output json | ConvertFrom-Json
+$deletedAccounts = @()
+Invoke-BestEffort 'Listing the soft-deleted Foundry accounts' {
+    $script:deletedAccounts = @(az cognitiveservices account list-deleted --output json | ConvertFrom-Json)
+}
+
 foreach ($deleted in $deletedAccounts) {
     $matchesEnvironment = if ($foundryAccountName) { $deleted.name -eq $foundryAccountName } else { $deleted.name -like "aif-$EnvironmentName-*" }
     if (-not $matchesEnvironment) { continue }
@@ -296,18 +333,26 @@ foreach ($deleted in $deletedAccounts) {
     $location = $segments[[array]::IndexOf($segments, 'locations') + 1]
     $group = $segments[[array]::IndexOf($segments, 'resourceGroups') + 1]
 
-    Invoke-Native az @('cognitiveservices', 'account', 'purge', '--name', $deleted.name, '--location', $location, '--resource-group', $group)
-    "  purged Foundry account $($deleted.name)"
+    Invoke-BestEffort "Purging the soft-deleted Foundry account '$($deleted.name)'" -Hint 'Azure purges it on its own after about 48 hours. Until then it goes on holding its model-deployment quota, and redeploying the same name into the same region will fail.' -Action {
+        Invoke-Native az @('cognitiveservices', 'account', 'purge', '--name', $deleted.name, '--location', $location, '--resource-group', $group)
+        "  purged Foundry account $($deleted.name)"
+    }
     $purged++
 }
 
-$deletedApim = az apim deletedservice list --output json 2>$null | ConvertFrom-Json
+$deletedApim = @()
+Invoke-BestEffort 'Listing the soft-deleted API Management instances' {
+    $script:deletedApim = @(az apim deletedservice list --output json 2>$null | ConvertFrom-Json)
+}
+
 foreach ($deleted in $deletedApim) {
     $matchesEnvironment = if ($apimServiceName) { $deleted.name -eq $apimServiceName } else { $deleted.name -like "apim-$EnvironmentName-*" }
     if (-not $matchesEnvironment) { continue }
 
-    Invoke-Native az @('apim', 'deletedservice', 'purge', '--service-name', $deleted.name, '--location', $deleted.location)
-    "  purged API Management $($deleted.name)"
+    Invoke-BestEffort "Purging the soft-deleted API Management instance '$($deleted.name)'" {
+        Invoke-Native az @('apim', 'deletedservice', 'purge', '--service-name', $deleted.name, '--location', $deleted.location)
+        "  purged API Management $($deleted.name)"
+    }
     $purged++
 }
 
@@ -317,24 +362,26 @@ if (-not $KeepAppRegistration) {
     Write-Step 'Deleting the Entra app registrations'
 
     foreach ($appRegistrationName in $appRegistrations.Keys) {
-        $appId = $appRegistrations[$appRegistrationName]
-        if (-not $appId) { $appId = az ad app list --display-name $appRegistrationName --query '[0].appId' -o tsv }
+        Invoke-BestEffort "Deleting the app registration '$appRegistrationName'" {
+            $appId = $appRegistrations[$appRegistrationName]
+            if (-not $appId) { $appId = az ad app list --display-name $appRegistrationName --query '[0].appId' -o tsv }
 
-        if ([string]::IsNullOrWhiteSpace($appId)) {
-            "  no app registration named '$appRegistrationName'; nothing to delete"
-            continue
+            if ([string]::IsNullOrWhiteSpace($appId)) {
+                "  no app registration named '$appRegistrationName'; nothing to delete"
+            }
+            else {
+                # Deleting the application usually takes its service principal with it, but not
+                # reliably enough to leave a stale principal holding role assignments in the tenant.
+                $spObjectId = az ad sp list --filter "appId eq '$appId'" --query '[0].id' -o tsv
+                if (-not [string]::IsNullOrWhiteSpace($spObjectId)) {
+                    Invoke-Native az @('ad', 'sp', 'delete', '--id', $appId)
+                    "  deleted service principal $spObjectId"
+                }
+
+                Invoke-Native az @('ad', 'app', 'delete', '--id', $appId)
+                "  deleted app registration $appRegistrationName ($appId)"
+            }
         }
-
-        # Deleting the application usually takes its service principal with it, but not reliably
-        # enough to leave a stale principal holding role assignments in the tenant.
-        $spObjectId = az ad sp list --filter "appId eq '$appId'" --query '[0].id' -o tsv
-        if (-not [string]::IsNullOrWhiteSpace($spObjectId)) {
-            az ad sp delete --id $appId
-            "  deleted service principal $spObjectId"
-        }
-
-        az ad app delete --id $appId
-        "  deleted app registration $appRegistrationName ($appId)"
     }
 }
 
@@ -347,8 +394,12 @@ Write-Step 'Deleting Entra agent identities'
 $agentIdentityPrefix = if ($foundryAccountName -and $foundryProjectName) { "$foundryAccountName-$foundryProjectName-" } else { "aif-$EnvironmentName-" }
 $agentIdentityFilter = { $_.displayName -like "$agentIdentityPrefix*AgentIdentity*" }
 
-$agentPrincipals = @(az ad sp list --all --output json | ConvertFrom-Json | Where-Object $agentIdentityFilter)
-$agentApps = @(az ad app list --all --output json | ConvertFrom-Json | Where-Object $agentIdentityFilter)
+$agentPrincipals = @()
+$agentApps = @()
+Invoke-BestEffort 'Listing the Entra agent identities' {
+    $script:agentPrincipals = @(az ad sp list --all --output json | ConvertFrom-Json | Where-Object $agentIdentityFilter)
+    $script:agentApps = @(az ad app list --all --output json | ConvertFrom-Json | Where-Object $agentIdentityFilter)
+}
 
 # Principals first: deleting an application takes its own principal with it, but the per-agent
 # identities have no application to be removed by.
@@ -366,7 +417,13 @@ foreach ($app in $agentApps) {
 
 if ($agentPrincipals.Count -eq 0 -and $agentApps.Count -eq 0) { "  no agent identities matching '$agentIdentityPrefix*'" }
 
-if (-not $KeepEnvironmentFiles) {
+if (-not $KeepEnvironmentFiles -and -not $resourcesDeleted) {
+    Write-Step 'Keeping the local azd environments'
+
+    # They are what a rerun needs to drive azd, and the generated resource names live nowhere else.
+    "  the Azure resources were not fully deleted; rerun this script to finish the teardown"
+}
+elseif (-not $KeepEnvironmentFiles) {
     Write-Step 'Removing local azd environments'
 
     foreach ($env in @(
@@ -374,8 +431,10 @@ if (-not $KeepEnvironmentFiles) {
             @{ Name = $OrchestratorEnvironmentName; Cwd = $orchestratorRoot })) {
 
         if (Test-AzdEnv -Name $env.Name -Cwd $env.Cwd) {
-            Invoke-Native azd @('env', 'remove', $env.Name, '--cwd', $env.Cwd, '--force')
-            "  removed '$($env.Name)'"
+            Invoke-BestEffort "Removing the local azd environment '$($env.Name)'" {
+                Invoke-Native azd @('env', 'remove', $env.Name, '--cwd', $env.Cwd, '--force')
+                "  removed '$($env.Name)'"
+            }
         }
         else {
             "  '$($env.Name)' does not exist locally"
@@ -391,6 +450,14 @@ if ((az group exists --name $ResourceGroupName) -eq 'true') {
 else {
     "  resource group '$ResourceGroupName' is gone"
 }
+
+if ($teardownFailures.Count -gt 0) {
+    ''
+    Write-Warning "$($teardownFailures.Count) step(s) did not complete:"
+    foreach ($failure in $teardownFailures) { Write-Warning "  - $failure" }
+    Write-Warning 'Rerun this script to retry them. Anything already deleted is skipped.'
+}
+
 ''
 'Redeploy with:'
 "  ./scripts/New-Deployment.ps1 -TenantId <tenant-id> -SubscriptionId <subscription-id> ``"

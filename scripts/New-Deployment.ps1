@@ -294,12 +294,27 @@ else {
         Invoke-Native dotnet @('publish', (Join-Path $orchestratorRoot 'src/geo-orchestrator/geo-orchestrator.csproj'),
             '--configuration', 'Release', '--output', $publishDir)
 
-        Compress-Archive -Path (Join-Path $publishDir '*') -DestinationPath $package -Force
+        # Compress-Archive, and ZipFile.CreateFromDirectory on Windows PowerShell, separate nested
+        # entry paths with backslashes. Linux Kudu unzips those as one long filename instead of a
+        # directory, and then rsync cannot stat the result and fails the whole deployment. Naming the
+        # entries here keeps the separator right no matter which shell runs the script.
+        $archive = [System.IO.Compression.ZipFile]::Open($package, [System.IO.Compression.ZipArchiveMode]::Create)
+        try {
+            foreach ($file in Get-ChildItem $publishDir -Recurse -File) {
+                $entry = $file.FullName.Substring($publishDir.Length + 1).Replace('\', '/')
+                [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $file.FullName, $entry) | Out-Null
+            }
+        }
+        finally {
+            $archive.Dispose()
+        }
 
+        # Without --clean, Kudu rsyncs over whatever is already in wwwroot, so a single undeletable
+        # leftover file fails the whole deployment.
         Invoke-Native az @('webapp', 'deploy',
             '--resource-group', $config['AZURE_RESOURCE_GROUP'],
             '--name', $config['ORCHESTRATOR_APP_NAME'],
-            '--src-path', $package, '--type', 'zip')
+            '--src-path', $package, '--type', 'zip', '--clean', 'true')
     }
     finally {
         Remove-Item $publishDir -Recurse -Force -ErrorAction SilentlyContinue

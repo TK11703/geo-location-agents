@@ -31,6 +31,12 @@ TokenCredential credential = isHosted
     ? new DefaultAzureCredential()
     : new DefaultAzureCredential(new DefaultAzureCredentialOptions { ExcludeManagedIdentityCredential = true });
 
+// Set only where the cloud's Foundry audience is not the commercial one the client libraries assume.
+if (Environment.GetEnvironmentVariable("FOUNDRY_TOKEN_AUDIENCE") is { Length: > 0 } foundryAudience)
+{
+    credential = new FoundryAudienceCredential(credential, foundryAudience);
+}
+
 var projectClient = new AIProjectClient(projectEndpoint, credential);
 
 

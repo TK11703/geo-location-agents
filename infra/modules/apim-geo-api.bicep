@@ -20,6 +20,9 @@ param geoApiAudience string
 @description('Authority the policy fetches OpenID metadata from. Defaults to the cloud being deployed to.')
 param entraLoginEndpoint string = environment().authentication.loginEndpoint
 
+// The policies concatenate this with the tenant id, and Azure Government returns it without a trailing slash.
+var normalizedLoginEndpoint = endsWith(entraLoginEndpoint, '/') ? entraLoginEndpoint : '${entraLoginEndpoint}/'
+
 @description('Issuer prefix for v1 tokens, which is what a managed identity presents.')
 param entraV1Issuer string = 'https://sts.windows.net/'
 
@@ -62,7 +65,7 @@ resource loginEndpointValue 'Microsoft.ApiManagement/service/namedValues@2022-08
   name: 'entra-login-endpoint'
   properties: {
     displayName: 'entra-login-endpoint'
-    value: entraLoginEndpoint
+    value: normalizedLoginEndpoint
     secret: false
   }
 }

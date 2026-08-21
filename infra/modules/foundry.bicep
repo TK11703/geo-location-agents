@@ -61,8 +61,27 @@ var resolvedModelSku = !empty(modelDeploymentSku)
   ? modelDeploymentSku
   : (modelSkuByCloud[?environment().name] ?? 'GlobalStandard')
 
-var foundryUser = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '53ca6127-db72-4b80-b1b0-d745d6d5456d')
-var foundryProjectManager = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'eadc314b-1a2d-4efa-be10-5d325db5065e')
+// Azure AI User and Azure AI Project Manager are not published in Government, so an assignment
+// naming either fails with RoleDefinitionDoesNotExist. Cognitive Services User is, and its
+// Microsoft.CognitiveServices/* data action covers both the agent CRUD deploy-agents.ps1 performs
+// and the inference the orchestrator does. It is broader than the pair it replaces, but both
+// assignments below are scoped to this account alone.
+var foundryUserRoleByCloud = {
+  AzureCloud: '53ca6127-db72-4b80-b1b0-d745d6d5456d'
+  AzureUSGovernment: 'a97b65f3-24c7-4388-baec-2e87135dc908'
+}
+
+// Empty means the wildcard above already covers it, and the separate assignment is skipped.
+var projectManagerRoleByCloud = {
+  AzureCloud: 'eadc314b-1a2d-4efa-be10-5d325db5065e'
+  AzureUSGovernment: ''
+}
+
+var resolvedFoundryUserRole = foundryUserRoleByCloud[?environment().name] ?? foundryUserRoleByCloud.AzureCloud
+var resolvedProjectManagerRole = projectManagerRoleByCloud[?environment().name] ?? projectManagerRoleByCloud.AzureCloud
+
+var foundryUser = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', resolvedFoundryUserRole)
+var foundryProjectManager = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', resolvedProjectManagerRole)
 
 resource account 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   name: accountName
@@ -113,6 +132,11 @@ resource orchestratorModel 'Microsoft.CognitiveServices/accounts/deployments@202
       version: orchestratorModelVersion
     }
   }
+  // The account serializes operations across all its children, not just its deployments, so a
+  // project created alongside one of them loses the race with RequestConflict.
+  dependsOn: [
+    project
+  ]
 }
 
 resource specialistModel 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
@@ -146,7 +170,8 @@ resource deployerFoundryUser 'Microsoft.Authorization/roleAssignments@2022-04-01
 }
 
 // deploy-agents.ps1 and `azd deploy geo-orchestrator` both write agent definitions to the project.
-resource deployerProjectManager 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(deployerPrincipalId)) {
+// Skipped where one role covers both, because the assignment name would collide with the one above.
+resource deployerProjectManager 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(deployerPrincipalId) && !empty(resolvedProjectManagerRole)) {
   scope: account
   name: guid(account.id, deployerPrincipalId, foundryProjectManager)
   properties: {

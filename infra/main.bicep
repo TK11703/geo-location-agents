@@ -66,7 +66,21 @@ param orchestratorApiAudience string = ''
 
 param orchestratorApiId string = 'orchestrator-api'
 param orchestratorApiPath string = 'orchestrator'
-param orchestratorAppServiceSku string = 'B1'
+
+@description('App Service tier for the orchestrator. Empty resolves it from the cloud being deployed to.')
+param orchestratorAppServiceSku string = ''
+
+// B1 and S1 sit on older worker pools in Government that are chronically full, and the deployment
+// fails with 'No available instances to satisfy this request'. That is a scale unit out of room
+// rather than the SKU being absent, so it does not show up in a regional SKU list and there is
+// nothing to check before deploying. Premium v3 runs on newer stamps that have capacity.
+var appServiceSkuByCloud = {
+  AzureCloud: 'B1'
+  AzureUSGovernment: 'P0v3'
+}
+var resolvedOrchestratorAppServiceSku = !empty(orchestratorAppServiceSku)
+  ? orchestratorAppServiceSku
+  : (appServiceSkuByCloud[?environment().name] ?? 'B1')
 
 var orchestratorHostByCloud = {
   AzureCloud: 'FoundryHosted'
@@ -110,6 +124,33 @@ var resolvedAzureMapsEndpoint = !empty(azureMapsEndpoint)
   ? azureMapsEndpoint
   : (azureMapsEndpointByCloud[?environment().name] ?? 'https://atlas.microsoft.com')
 
+// Flex Consumption scales to zero and is the cheaper way to run this, but it is not offered in
+// Government, and the tiers that are there all require a content share that only account keys can
+// reach. Dedicated is the one tier with no content share, so it is the only one that survives a
+// tenant policy disabling shared key access.
+@description('Hosting tier for the function app. Empty resolves it from the cloud being deployed to.')
+@allowed([
+  ''
+  'FlexConsumption'
+  'Dedicated'
+])
+param functionPlanTier string = ''
+
+@description('App Service tier used when the function app lands on a Dedicated plan. Empty resolves it from the cloud being deployed to.')
+param functionAppServiceSku string = ''
+
+var resolvedFunctionAppServiceSku = !empty(functionAppServiceSku)
+  ? functionAppServiceSku
+  : (appServiceSkuByCloud[?environment().name] ?? 'B1')
+
+var functionPlanTierByCloud = {
+  AzureCloud: 'FlexConsumption'
+  AzureUSGovernment: 'Dedicated'
+}
+var resolvedFunctionPlanTier = !empty(functionPlanTier)
+  ? functionPlanTier
+  : (functionPlanTierByCloud[?environment().name] ?? 'FlexConsumption')
+
 @minLength(1)
 @description('App ID URI of the app registration representing this API. The preprovision hook writes it into the environment.')
 param geoApiAudience string
@@ -145,6 +186,7 @@ var foundryProjectName = 'proj-${namePrefix}'
 var orchestratorAppName = 'app-${namePrefix}-${resourceToken}'
 var orchestratorPlanName = 'plan-orch-${namePrefix}-${resourceToken}'
 var orchestratorIdentityName = 'id-orch-${namePrefix}-${resourceToken}'
+var functionIdentityName = 'id-func-${namePrefix}-${resourceToken}'
 var deploymentContainerName = 'app-package-${take(replace(functionAppName, '-', ''), 32)}-${take(resourceToken, 7)}'
 
 resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
@@ -168,6 +210,9 @@ module backend 'modules/backend.bicep' = {
     nwsUserAgent: nwsUserAgent
     mapsAccountName: mapsAccountName
     azureMapsEndpoint: resolvedAzureMapsEndpoint
+    functionPlanTier: resolvedFunctionPlanTier
+    functionAppServiceSku: resolvedFunctionAppServiceSku
+    functionIdentityName: functionIdentityName
   }
 }
 
@@ -246,11 +291,12 @@ module orchestratorApp 'modules/orchestrator-appservice.bicep' = if (selfHostedO
     tags: tags
     name: orchestratorAppName
     planName: orchestratorPlanName
-    sku: orchestratorAppServiceSku
+    sku: resolvedOrchestratorAppServiceSku
     identityResourceId: orchestratorIdentity.outputs.id
     identityClientId: orchestratorIdentity.outputs.clientId
     foundryProjectEndpoint: foundry.outputs.projectEndpoint
     modelDeploymentName: foundry.outputs.orchestratorDeploymentName
+    foundryTokenAudience: foundry.outputs.tokenAudience
     appInsightsConnectionString: backend.outputs.appInsightsConnectionString
     callerPrincipalId: apim.outputs.principalId
     authClientId: replace(orchestratorApiAudience, 'api://', '')
@@ -280,6 +326,7 @@ output FUNCTION_APP_RESOURCE_GROUP string = rg.name
 output FUNCTION_APP_NAME string = backend.outputs.functionAppName
 output FUNCTION_APP_API_URL string = backend.outputs.functionAppApiUrl
 output FUNCTION_APP_PRINCIPAL_ID string = backend.outputs.functionAppPrincipalId
+output FUNCTION_PLAN_TIER string = resolvedFunctionPlanTier
 output MAPS_ACCOUNT_NAME string = backend.outputs.mapsAccountName
 
 output APIM_RESOURCE_GROUP string = rg.name

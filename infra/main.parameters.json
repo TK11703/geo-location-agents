@@ -12,6 +12,8 @@
     "azureMapsEndpoint": { "value": "${AZURE_MAPS_ENDPOINT}" },
     "aiServicesDomain": { "value": "${AI_SERVICES_DOMAIN}" },
     "modelDeploymentSku": { "value": "${MODEL_DEPLOYMENT_SKU}" },
+    "functionPlanTier": { "value": "${FUNCTION_PLAN_TIER}" },
+    "functionAppServiceSku": { "value": "${FUNCTION_APP_SERVICE_SKU}" },
     "resourceTokenSalt": { "value": "${AZD_RESOURCE_TOKEN_SALT}" },
     "nwsUserAgent": { "value": "${NWS_USER_AGENT}" },
     "apimSku": { "value": "${APIM_SKU=Developer}" },
@@ -20,7 +22,7 @@
     "geoApiAudience": { "value": "${GEO_API_AUDIENCE}" },
     "orchestratorHost": { "value": "${ORCHESTRATOR_HOST}" },
     "orchestratorApiAudience": { "value": "${ORCHESTRATOR_API_AUDIENCE}" },
-    "orchestratorAppServiceSku": { "value": "${ORCHESTRATOR_APP_SERVICE_SKU=B1}" },
+    "orchestratorAppServiceSku": { "value": "${ORCHESTRATOR_APP_SERVICE_SKU}" },
     "orchestratorDeploymentName": { "value": "${ORCHESTRATOR_MODEL=gpt-4.1}" },
     "specialistDeploymentName": { "value": "${SPECIALIST_MODEL=gpt-4-1-mini}" }
   }

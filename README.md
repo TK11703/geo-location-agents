@@ -42,7 +42,7 @@ flowchart LR
 
     subgraph Gate["Data plane"]
         APIM["API Management<br/>validate-jwt on audience and oid<br/>injects x-functions-key"]
-        Fn["Function app<br/>Flex Consumption<br/>9 HTTP endpoints"]
+        Fn["Function app<br/>Flex Consumption or Dedicated<br/>9 HTTP endpoints"]
     end
 
     subgraph Up["Upstream providers"]
@@ -252,6 +252,13 @@ override that:
 | `AI_SERVICES_DOMAIN` | `aiServicesDomain` | `azure.com` | `azure.us` |
 | `MODEL_DEPLOYMENT_SKU` | `modelDeploymentSku` | `GlobalStandard` | `Standard` |
 | `ENTRA_V1_ISSUER` | `entraV1Issuer` | `https://sts.windows.net/` | unchanged |
+| `ORCHESTRATOR_HOST` | `orchestratorHost` | `FoundryHosted` | `LinuxAppService` |
+| `FUNCTION_PLAN_TIER` | `functionPlanTier` | `FlexConsumption` | `Dedicated` |
+| `FUNCTION_APP_SERVICE_SKU` | `functionAppServiceSku` | `B1` | `P0v3` |
+| `ORCHESTRATOR_APP_SERVICE_SKU` | `orchestratorAppServiceSku` | `B1` | `P0v3` |
+
+The last two apply only where something lands on an App Service plan: the function app on a
+`Dedicated` tier, and the orchestrator when it is self-hosted.
 
 `-Cloud` sets the cloud for azd and the Azure CLI, which default to commercial independently of one
 another. The Foundry data-plane hostname and the token audience the agent scripts request are both
@@ -272,6 +279,28 @@ model deployments fall back to `Standard`, which `gpt-4.1` and `gpt-4.1-mini` at
 `2025-04-14` both support in US Gov Virginia. And the API Management v2 tiers are commercial-only,
 so `-ApimSku Basicv2` is rejected outside commercial and the Developer tier's 30-to-45-minute
 provision applies.
+
+Flex Consumption is not offered in Azure Government, and every tier that is offered mounts a content
+share that only an account key can reach, so a tenant policy forcing `allowSharedKeyAccess` to false
+rules all of them out. Dedicated is the one tier with no content share, which is why a Gov
+deployment resolves to it and reaches storage entirely through the function app's managed identity.
+Its plan defaults to `P0v3` rather than `B1` because the B1 and S1 worker pools in Gov are
+chronically full: the deployment fails with `No available instances to satisfy this request`, which
+is a scale unit out of room rather than a SKU that is not offered, so nothing in a regional SKU list
+predicts it and Premium v3 runs on newer stamps that have capacity.
+
+Azure Maps in Azure Government implements a subset of the current API surface, and the gap is per
+API rather than per cloud. Geocoding and route calculation have no v2 there: `/geocode` rejects
+every api-version, and `/reverseGeocode` and `/route/directions` return `404`. Render and Traffic v2
+both work at the versions this app already sends. So `place-resolver`, `location-specialist`, and
+`mobility-specialist` fall back to the v1 Search and Route APIs in Gov, while static maps, traffic,
+and weather take one code path in both clouds. The switch lives in `AzureMapsApiProfile` and keys
+off the endpoint host; `AzureMaps__UseLegacyApis` overrides it if that detection is ever wrong.
+
+Two behaviors follow from the fallback. `output=details` returns whatever the upstream route API
+returns, so a Gov response carries the v1 `routes[]` shape rather than GeoJSON. And Route v1 has no
+axle-count restriction, so `axleCount` is accepted and ignored in Gov; every other vehicle attribute
+has a v1 equivalent and is applied.
 
 The Foundry Agent Service is the one component with no Gov presence. Azure Maps, Azure OpenAI, API
 Management, Functions, and Entra are all available in US Gov Virginia, but the Agent Service region
@@ -294,7 +323,11 @@ It prompts before deleting anything; `-WhatIf` reports the target and stops, and
 prompt. Pass `-KeepAppRegistration` when an app was supplied through `-GeoApiAudience` rather than
 created by the hook, or `-KeepEnvironmentFiles` to delete the Azure resources but keep the settings
 for a redeploy. `-Cloud` has to match the cloud the environment was deployed into. Rerunning is
-safe: anything already gone is reported and skipped.
+safe: anything already gone is reported and skipped. Every step is best effort, because each one is
+clearing up something already orphaned — a step that fails warns, the steps after it still run, and
+what failed is listed again at the end. The local environments are the exception to that
+independence: they are kept when the resources were not fully deleted, because they are what a rerun
+needs to drive azd.
 
 The orchestrator is deployed after this one either way, with `FOUNDRY_PROJECT_ENDPOINT` and
 `AZURE_AI_MODEL_DEPLOYMENT_NAME` taken from the outputs above — as app settings on the App Service,
@@ -456,7 +489,8 @@ whose `properties.type` is `RoutePath` for the full `MultiLineString` geometry,
 `distanceInMeters`, `durationInSeconds`, traffic duration, arrival and departure times,
 and route legs. Features whose `properties.type` is `ManeuverPoint` contain itinerary
 information such as instructions, road names, signs, exits, and step ranges. GeoJSON
-positions use `[longitude, latitude]` order.
+positions use `[longitude, latitude]` order. In Azure Government the upstream route API
+is v1, so the response carries its `routes[]` shape instead.
 
 An HTTP response can contain either the PNG or GeoJSON.
 
@@ -488,7 +522,8 @@ http://localhost:7071/api/geocode?query=Boise,%20Idaho&top=3
 empty. More than one candidate means the query was ambiguous: dozens of real places are
 called Springfield, and the endpoint does not choose between them. Each candidate carries
 its own `confidence` and `resultType`, and a `resultType` describing an area rather than a
-building means the coordinate is the center of that area.
+building means the coordinate is the center of that area. In Azure Government the upstream
+Search API is v1, which has no comparable score, so `confidence` is `null` there.
 
 Coordinates are returned as `latitude` and `longitude` fields rather than a GeoJSON
 position, so there is no `[longitude, latitude]` ordering to get wrong at the caller.
@@ -681,13 +716,50 @@ Tools, and provisions its own Azure Maps account.
 
 ### Required permissions
 
-- **Entra.** The preprovision hook creates an app registration for the gateway audience, which needs
-  the Application Developer role or equivalent. Tenants that do not grant it can pass
-  `-GeoApiAudience` to reuse an existing registration. Teardown deletes app registrations, service
-  principals, and the agent identity blueprints Foundry creates per agent, so it needs the same
-  rights.
-- **Subscription.** The template assigns roles, so Contributor alone is not enough. Use Owner, or
-  Contributor together with User Access Administrator.
+Two grants, in two different places. Neither implies the other, and the deployment fails at a
+different point depending on which one is missing.
+
+| Scope | Grant | Why |
+|-------|-------|-----|
+| Entra tenant | Application Developer, or equivalent rights over app registrations | The preprovision hook creates two app registrations and their service principals |
+| Subscription | Owner, or Contributor together with User Access Administrator | The template creates role assignments, which Contributor cannot do |
+
+Assign the subscription roles at subscription scope rather than on a resource group. `main.bicep`
+targets the subscription and creates the resource group itself, so a grant scoped to a group that
+does not exist yet has nothing to apply to.
+
+**Entra.** [Initialize-AzdEnvironment.ps1](scripts/Initialize-AzdEnvironment.ps1) creates
+`geo-api-<environment>` and `geo-orchestrator-<environment>`, sets each App ID URI, exposes
+`user_impersonation` on the orchestrator app, and pre-authorizes the Azure CLI against it. None of
+that is an ARM operation, so no subscription role covers it. Teardown deletes the same objects, plus
+the agent identity blueprints Foundry mints per published agent, and needs the same rights.
+
+Where the role is not available, an administrator can create both registrations by hand. Passing
+`-GeoApiAudience` covers only the geo API; the orchestrator app has to be supplied by setting
+`ORCHESTRATOR_API_AUDIENCE` in the azd environment, and Azure Government always needs it, because
+that cloud resolves to the self-hosted orchestrator. A hand-made orchestrator app needs an
+identifier URI of `api://<app-id>`, a service principal, a `user_impersonation` scope, and the Azure
+CLI (`04b07795-8ddb-461a-bbee-02f9e1bf7b46`) pre-authorized against that scope. Without the last
+two the deployment still succeeds; only `ask.ps1 -Deployed` fails, with AADSTS65001.
+
+**Subscription.** Beyond creating the resource group and everything in it, the template writes three
+kinds of role assignment, which is what rules Contributor out on its own:
+
+| Assignment | Principal | Scope |
+|------------|-----------|-------|
+| Storage Blob Data Contributor | function app identity | the storage account |
+| Azure AI User and Azure AI Project Manager | the deploying principal | the Foundry account |
+| Azure AI User | the orchestrator's user-assigned identity | the Foundry account |
+
+The second one is why subscription Owner alone is not sufficient either: Foundry data-plane access
+is not implied by any control-plane role, and without it the postdeploy hook cannot publish the
+specialists. `AZURE_PRINCIPAL_ID` is what azd substitutes for it, so the principal that runs the
+deployment is the one that ends up able to publish.
+
+A custom role works in place of Owner provided it carries
+`Microsoft.Authorization/roleAssignments/write` alongside the resource types above. If the roles
+arrive through PIM, activate both before starting; the preprovision hook runs within seconds of the
+first Azure call, well inside the window where a just-activated assignment has not propagated.
 
 ### Running them
 
@@ -717,6 +789,7 @@ environments.
 |---------|----------|---------|---------|
 | `AzureMaps__SubscriptionKey` | Yes | None | Server-side Azure Maps authentication key. Set from the provisioned account when deployed; supply your own for local development. |
 | `AzureMaps__Endpoint` | No | `https://atlas.microsoft.com` | Azure Maps endpoint, configurable for sovereign clouds or tests. |
+| `AzureMaps__UseLegacyApis` | No | Auto-detected from the endpoint host | Forces the v1 Search and Route APIs on or off. Set only to override the sovereign-cloud detection. |
 | `Nws__UserAgent` | For `/api/alerts/nws` | None | Contact User-Agent required by the National Weather Service, in the form `AppName (contact@example.com)`. |
 | `Nws__Endpoint` | For `/api/alerts/nws` | `https://api.weather.gov` in the provided app settings | National Weather Service endpoint, configurable for tests. |
 | `Elevation__Endpoint` | No | `https://epqs.nationalmap.gov/v1/json` | USGS 3DEP point query endpoint, configurable for tests. |

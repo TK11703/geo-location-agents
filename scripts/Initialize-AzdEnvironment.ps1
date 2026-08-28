@@ -10,8 +10,15 @@
          orchestrator when it is self-hosted. Each has its own audience so a token minted for one
          cannot be replayed against the other. Entra objects are not ARM resources, so this cannot
          live in Bicep. The orchestrator app also exposes a user_impersonation scope and
-         pre-authorizes the Azure CLI, so a signed-in user can call it without an admin consenting
-         to the API first.
+         pre-authorizes the Azure CLI and the web front end, so a signed-in user can call it without
+         an admin consenting to the API first.
+
+         A third registration is created for the web front end, which is a client rather than an
+         API: it signs users in and asks for that scope on their behalf. Set DEPLOY_WEB_APP to
+         false to leave both the registration and the App Service out of the deployment. The rest
+         of that registration -- the redirect URIs, and the federated credential that lets it prove
+         itself without a secret -- depends on resources that do not exist yet, so it is completed
+         after provisioning by webapp/Set-WebAppRegistration.ps1.
 
       2. Mints the salt that keeps this environment's resource names, and so the Foundry
          subdomain, distinct from any previous build of the same environment name.
@@ -70,11 +77,31 @@ function New-ApiAppRegistration {
     $appId
 }
 
-function Set-AzureCliPreAuthorization {
-    param([string]$AppId)
+function New-ClientAppRegistration {
+    param([string]$DisplayName)
 
-    # First-party client id of the Azure CLI. Microsoft's own app ids are the same in every cloud.
-    $azureCliAppId = '04b07795-8ddb-461a-bbee-02f9e1bf7b46'
+    # A client, not an API: it holds no identifier URI and exposes no scope, it only asks for one.
+    $appId = az ad app list --display-name $DisplayName --query "[0].appId" -o tsv
+    if ([string]::IsNullOrWhiteSpace($appId)) {
+        $appId = az ad app create --display-name $DisplayName --sign-in-audience AzureADMyOrg --query appId -o tsv
+        if ([string]::IsNullOrWhiteSpace($appId)) { throw "Could not create the app registration '$DisplayName'. This needs the Entra Application Developer role." }
+    }
+
+    # Sign-in would create the service principal on first consent, but the deployment grants roles
+    # against it before anyone has signed in.
+    $spObjectId = az ad sp list --filter "appId eq '$appId'" --query "[0].id" -o tsv
+    if ([string]::IsNullOrWhiteSpace($spObjectId)) {
+        az ad sp create --id $appId | Out-Null
+    }
+
+    $appId
+}
+
+function Set-PreAuthorizedClients {
+    param([string]$AppId, [string[]]$ClientAppIds)
+
+    $clientAppIds = @($ClientAppIds | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($clientAppIds.Count -eq 0) { return }
 
     $api = az ad app show --id $AppId --query api -o json 2>$null | ConvertFrom-Json
     if (-not $api) {
@@ -83,9 +110,14 @@ function Set-AzureCliPreAuthorization {
     }
 
     $scope = $api.oauth2PermissionScopes | Where-Object { $_.value -eq 'user_impersonation' }
-    $preAuthorized = $api.preAuthorizedApplications | Where-Object { $_.appId -eq $azureCliAppId }
-    if ($scope -and $scope.id -in $preAuthorized.delegatedPermissionIds) {
-        "  $AppId already exposes user_impersonation to the Azure CLI"
+    $granted = @($clientAppIds | Where-Object {
+            $clientId = $_
+            $existing = $api.preAuthorizedApplications | Where-Object { $_.appId -eq $clientId }
+            $scope -and $scope.id -in $existing.delegatedPermissionIds
+        })
+
+    if ($scope -and $granted.Count -eq $clientAppIds.Count) {
+        "  $AppId already exposes user_impersonation to $($clientAppIds -join ', ')"
         return
     }
 
@@ -110,14 +142,15 @@ function Set-AzureCliPreAuthorization {
         }
     }
 
+    # Sent as the whole collection, because Graph replaces the property rather than merging into it.
     $preAuth = @{
         api = @{
-            preAuthorizedApplications = @(
-                @{
-                    appId                  = $azureCliAppId
-                    delegatedPermissionIds = @($scopeId)
-                }
-            )
+            preAuthorizedApplications = @($clientAppIds | ForEach-Object {
+                    @{
+                        appId                  = $_
+                        delegatedPermissionIds = @($scopeId)
+                    }
+                })
         }
     }
 
@@ -128,7 +161,7 @@ function Set-AzureCliPreAuthorization {
     $objectId = az ad app show --id $AppId --query id -o tsv
     $url = "$graphEndpoint/v1.0/applications/$objectId"
 
-    $granted = $true
+    $patched = $true
     $lastError = ''
 
     # Two calls, because Graph rejects a pre-authorization naming a scope id that the same request is
@@ -152,14 +185,14 @@ function Set-AzureCliPreAuthorization {
             Remove-Item $bodyFile -Force -ErrorAction SilentlyContinue
         }
 
-        if (-not $ok) { $granted = $false; break }
+        if (-not $ok) { $patched = $false; break }
     }
 
-    # A warning rather than a throw: the deployment itself is unaffected, and only the convenience of
-    # asking the Azure CLI for a token is lost.
-    if ($granted) { "  $AppId now exposes user_impersonation to the Azure CLI" }
+    # A warning rather than a throw: the deployment itself is unaffected, and what is lost is the
+    # convenience of asking for a token without an administrator consenting to the API first.
+    if ($patched) { "  $AppId now exposes user_impersonation to $($clientAppIds -join ', ')" }
     else {
-        Write-Warning "Could not expose user_impersonation on app $AppId. Deployment is unaffected, but ask.ps1 -Deployed will fail with AADSTS65001 until the scope is added and the Azure CLI ($azureCliAppId) is pre-authorized.`n$($lastError.Trim())"
+        Write-Warning "Could not expose user_impersonation on app $AppId. Deployment is unaffected, but a delegated caller will fail with AADSTS65001 until the scope is added and these clients are pre-authorized: $($clientAppIds -join ', ').`n$($lastError.Trim())"
     }
 }
 
@@ -200,12 +233,14 @@ if ([string]::IsNullOrWhiteSpace($config['AZD_RESOURCE_TOKEN_SALT'])) {
 # client credentials, which need no consent; the orchestrator is called by a person holding an Azure
 # CLI token, which does.
 $apps = [ordered]@{
-    GEO_API          = @{ DisplayName = "geo-api-$envName"; ExposeToAzureCli = $false }
-    ORCHESTRATOR_API = @{ DisplayName = "geo-orchestrator-$envName"; ExposeToAzureCli = $true }
+    GEO_API          = @{ DisplayName = "geo-api-$envName"; ExposeDelegatedScope = $false }
+    ORCHESTRATOR_API = @{ DisplayName = "geo-orchestrator-$envName"; ExposeDelegatedScope = $true }
 }
 
 $account = az account show 2>$null | ConvertFrom-Json
 if (-not $account) { throw 'Not signed in to the Azure CLI. Run az login.' }
+
+$appIds = @{}
 
 foreach ($key in $apps.Keys) {
     $app = $apps[$key]
@@ -221,7 +256,36 @@ foreach ($key in $apps.Keys) {
         if (-not $appId) { $appId = $config["${key}_AUDIENCE"] -replace '^api://', '' }
     }
 
-    # Checked on every run rather than only the one that creates the app, because an audience supplied
-    # by hand arrives with no scope on it.
-    if ($app.ExposeToAzureCli -and $appId) { Set-AzureCliPreAuthorization -AppId $appId }
+    $appIds[$key] = $appId
+}
+
+# The web front end is a client of the orchestrator API rather than an API itself, so it has no
+# audience of its own. Skipping it leaves main.bicep with no client id, which is what keeps the App
+# Service out of the deployment as well: an app nobody can sign in to is worse than no app.
+$deployWebApp = $config['DEPLOY_WEB_APP'] -ne 'false'
+
+if ($deployWebApp) {
+    if ([string]::IsNullOrWhiteSpace($config['WEB_APP_CLIENT_ID'])) {
+        Set-AzdValue WEB_APP_CLIENT_ID (New-ClientAppRegistration -DisplayName "geo-web-$envName")
+    }
+    else {
+        "{0,-26} already set to {1}; leaving the app registration alone" -f 'WEB_APP_CLIENT_ID', $config['WEB_APP_CLIENT_ID']
+    }
+}
+else {
+    # Written rather than left alone, so turning the front end off after a deployment removes it.
+    Set-AzdValue WEB_APP_CLIENT_ID ''
+}
+
+$webAppClientId = (& (Join-Path $PSScriptRoot 'Get-AzdConfig.ps1'))['WEB_APP_CLIENT_ID']
+
+# Checked on every run rather than only the one that creates the app, because an audience supplied by
+# hand arrives with no scope on it, and because the set of clients grows when the front end is added.
+foreach ($key in $apps.Keys) {
+    # First-party client id of the Azure CLI. Microsoft's own app ids are the same in every cloud.
+    $azureCliAppId = '04b07795-8ddb-461a-bbee-02f9e1bf7b46'
+
+    if ($apps[$key].ExposeDelegatedScope -and $appIds[$key]) {
+        Set-PreAuthorizedClients -AppId $appIds[$key] -ClientAppIds @($azureCliAppId, $webAppClientId)
+    }
 }

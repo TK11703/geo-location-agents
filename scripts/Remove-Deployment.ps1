@@ -236,6 +236,7 @@ $apimServiceName = $config['APIM_SERVICE_NAME']
 $appRegistrations = [ordered]@{
     "geo-api-$EnvironmentName"          = $config['GEO_API_APP_ID']
     "geo-orchestrator-$EnvironmentName" = $config['ORCHESTRATOR_API_APP_ID']
+    "geo-web-$EnvironmentName"          = $config['WEB_APP_CLIENT_ID']
 }
 
 if ((az cloud show --query name -o tsv 2>$null) -ne $Cloud) { Invoke-Native az @('cloud', 'set', '--name', $Cloud) }

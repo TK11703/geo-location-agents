@@ -17,5 +17,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\functionapp\src\geo-location-function-app\geo-location-function-app.csproj" />
     <ProjectReference Include="..\..\orchestrator\src\geo-orchestrator\geo-orchestrator.csproj" />
+    <ProjectReference Include="..\..\webapp\src\geo-chat-web\geo-chat-web.csproj" />
   </ItemGroup>
 </Project>

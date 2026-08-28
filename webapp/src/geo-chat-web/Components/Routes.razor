@@ -1,0 +1,14 @@
+<Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+            @* The fallback policy challenges an anonymous request before it reaches a component, so
+               this is only reached by an account the tenant will not let in. *@
+            <NotAuthorized>
+                <h1>Not signed in</h1>
+                <p>This account cannot use the geo-location orchestrator.</p>
+                <a class="btn btn-primary" href="MicrosoftIdentity/Account/SignIn">Sign in</a>
+            </NotAuthorized>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+</Router>

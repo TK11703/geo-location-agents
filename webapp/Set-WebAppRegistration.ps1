@@ -23,18 +23,20 @@ param(
     # Defaults come from the azd environment, which is where the provision wrote them.
     [string]$ClientId,
     [string]$WebAppUrl,
-    [string]$IdentityPrincipalId
+    [string]$IdentityPrincipalId,
+    [string]$TokenExchangeAudience
 )
 
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path $PSScriptRoot -Parent
 
-if (-not $ClientId -or -not $WebAppUrl -or -not $IdentityPrincipalId) {
-    $config = & (Join-Path $repoRoot 'scripts/Get-AzdConfig.ps1') -Require WEB_APP_CLIENT_ID, WEB_APP_URL, WEB_APP_IDENTITY_PRINCIPAL_ID
+if (-not $ClientId -or -not $WebAppUrl -or -not $IdentityPrincipalId -or -not $TokenExchangeAudience) {
+    $config = & (Join-Path $repoRoot 'scripts/Get-AzdConfig.ps1') -Require WEB_APP_CLIENT_ID, WEB_APP_URL, WEB_APP_IDENTITY_PRINCIPAL_ID, WEB_APP_TOKEN_EXCHANGE_AUDIENCE
     if (-not $ClientId) { $ClientId = $config['WEB_APP_CLIENT_ID'] }
     if (-not $WebAppUrl) { $WebAppUrl = $config['WEB_APP_URL'] }
     if (-not $IdentityPrincipalId) { $IdentityPrincipalId = $config['WEB_APP_IDENTITY_PRINCIPAL_ID'] }
+    if (-not $TokenExchangeAudience) { $TokenExchangeAudience = $config['WEB_APP_TOKEN_EXCHANGE_AUDIENCE'] }
 }
 
 $account = az account show 2>$null | ConvertFrom-Json
@@ -77,7 +79,8 @@ else {
 
 # The issuer is the tenant's own, which differs per cloud, so it is read rather than assumed. The
 # subject is the managed identity's object id: Entra will only accept an assertion signed for that
-# identity as proof that this client is who it says it is.
+# identity as proof that this client is who it says it is. The audience is cloud-specific too, and a
+# mismatch is rejected at sign-in with AADSTS7002121.
 $authority = (az cloud show --query endpoints.activeDirectory -o tsv).TrimEnd('/')
 $issuer = "$authority/$($account.tenantId)/v2.0"
 $credentialName = 'geo-web-managed-identity'
@@ -85,8 +88,11 @@ $credentialName = 'geo-web-managed-identity'
 $credentials = az ad app federated-credential list --id $ClientId -o json | ConvertFrom-Json
 $existingCredential = $credentials | Where-Object { $_.name -eq $credentialName }
 
-if ($existingCredential -and $existingCredential.subject -eq $IdentityPrincipalId -and $existingCredential.issuer -eq $issuer) {
-    "  federated credential already names $IdentityPrincipalId"
+if ($existingCredential -and
+    $existingCredential.subject -eq $IdentityPrincipalId -and
+    $existingCredential.issuer -eq $issuer -and
+    $existingCredential.audiences -contains $TokenExchangeAudience) {
+    "  federated credential already names $IdentityPrincipalId for $TokenExchangeAudience"
     return
 }
 
@@ -100,7 +106,7 @@ $parameters = @{
     name      = $credentialName
     issuer    = $issuer
     subject   = $IdentityPrincipalId
-    audiences = @('api://AzureADTokenExchange')
+    audiences = @($TokenExchangeAudience)
 } | ConvertTo-Json -Depth 4 -Compress
 
 $parametersFile = New-TemporaryFile
@@ -113,4 +119,4 @@ finally {
     Remove-Item $parametersFile -Force -ErrorAction SilentlyContinue
 }
 
-"  federated credential now names $IdentityPrincipalId"
+"  federated credential now names $IdentityPrincipalId for $TokenExchangeAudience"

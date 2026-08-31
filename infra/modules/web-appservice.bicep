@@ -26,6 +26,13 @@ param entraLoginEndpoint string = environment().authentication.loginEndpoint
 
 param entraTenantId string = subscription().tenantId
 
+// Entra rejects the assertion outright when this does not match the audience on the federated
+// credential, with AADSTS7002121, and the value it requires differs per cloud.
+@description('Audience the managed identity assertion is minted for.')
+param tokenExchangeAudience string = environment().name == 'AzureUSGovernment'
+  ? 'api://AzureADTokenExchangeUSGov'
+  : (environment().name == 'AzureChinaCloud' ? 'api://AzureADTokenExchangeChina' : 'api://AzureADTokenExchange')
+
 @description('Absolute URL of the orchestrator Responses route: the gateway when self-hosted, the Foundry agent endpoint otherwise.')
 param orchestratorEndpoint string
 
@@ -112,6 +119,10 @@ resource site 'Microsoft.Web/sites@2024-04-01' = {
             value: identity.properties.clientId
           }
           {
+            name: 'AzureAd__ClientCredentials__0__TokenExchangeUrl'
+            value: tokenExchangeAudience
+          }
+          {
             name: 'AZURE_CLIENT_ID'
             value: identity.properties.clientId
           }
@@ -144,3 +155,4 @@ resource site 'Microsoft.Web/sites@2024-04-01' = {
 output name string = site.name
 output url string = 'https://${site.properties.defaultHostName}'
 output identityPrincipalId string = identity.properties.principalId
+output tokenExchangeAudience string = tokenExchangeAudience

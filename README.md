@@ -93,6 +93,32 @@ Authorizing by caller identity rather than by source address is deliberate. An a
 reads as equivalent but fails open: the gateway's public IP is not exposed on every API Management
 tier, and an unresolved address leaves the app reachable by anyone.
 
+### Asking from a browser
+
+`POST /responses` with a bearer token is the whole interface, and the token is the awkward part of
+it: reaching the orchestrator by hand means signing in with the Azure CLI, asking it for a token for
+the right audience, and pasting that into a request. The web front end in
+[webapp/](webapp/README.md) is that sequence made ordinary — an ASP.NET Core Blazor Server app,
+styled with Bootstrap, on its own Linux App Service.
+
+It signs the user in with Entra and calls the orchestrator with *that user's* token rather than one
+of its own, so API Management still authorizes the person who asked. Losing that distinction is the
+usual cost of putting a web tier in front of an API, and there is no reason to pay it here: the
+gateway's orchestrator policy authorizes by audience rather than by a pinned object id, so a
+delegated token from a signed-in user satisfies it exactly as a managed identity's does.
+
+The app registration the app signs users in with is a confidential client, and it proves itself with
+a federated credential naming the App Service's managed identity, so no client secret exists for it
+in the template, in the repository, or in app settings. Redirect URIs and that credential both name
+resources the provision creates, so they are registered afterwards by
+[webapp/Set-WebAppRegistration.ps1](webapp/Set-WebAppRegistration.ps1).
+
+Under a Foundry-hosted orchestrator there is no gateway to call and no orchestrator app registration
+to hold a scope. The app is pointed at the Foundry agent endpoint with a token for the Foundry data
+plane instead, which the user's Azure AI User role authorizes; the endpoint and the scope are two app
+settings and nothing else about the app changes. `-SkipWebApp` leaves both the App Service and its
+app registration out of the deployment.
+
 ### What one question does
 
 The interesting part is the last two steps. A specialist records the tools that actually answered in
@@ -142,6 +168,7 @@ flowchart TB
         Api["functionapp/src/<br/>geo-location-function-app"]
         Defs["agents/*.md<br/>report-schema.json<br/>specs/*.json"]
         OrchSrc["orchestrator/src/geo-orchestrator"]
+        WebSrc["webapp/src/geo-chat-web"]
     end
 
     Pre["preprovision hook<br/>scripts/Initialize-AzdEnvironment.ps1<br/>Entra app registrations"]
@@ -149,6 +176,7 @@ flowchart TB
     Hook["postdeploy hook<br/>agents/deploy-agents.ps1"]
     Sub["FoundryHosted:<br/>azd deploy geo-orchestrator<br/>microsoft.foundry provider<br/>never azd provision"]
     Zip["LinuxAppService:<br/>dotnet publish, zip deploy<br/>run by New-Deployment.ps1"]
+    WebZip["dotnet publish, zip deploy<br/>plus redirect URIs and a<br/>federated credential"]
 
     Pre --> Root
     Infra --> Root
@@ -158,6 +186,7 @@ flowchart TB
     Hook --> Agents["5 prompt agents<br/>Foundry returns the existing<br/>version when nothing changed"]
     OrchSrc --> Sub --> Hosted["geo-orchestrator hosted agent"]
     OrchSrc --> Zip --> AppSvc["orchestrator App Service<br/>reachable only through the gateway"]
+    WebSrc --> WebZip --> Web["web App Service<br/>Entra sign-in, calls the<br/>orchestrator as the user"]
 ```
 
 ### Adding an endpoint
@@ -213,6 +242,7 @@ different subscription or tenant means different arguments rather than a changed
 | Resource group | `-ResourceGroupName` | `rg-<environment name>` |
 | APIM tier | `-ApimSku` | `Developer` |
 | Orchestrator host | `-OrchestratorHost` | `Auto`, resolved from the cloud |
+| Web front end | `-SkipWebApp` | deployed unless the switch is given |
 | Existing gateway audience | `-GeoApiAudience` | created by the preprovision hook |
 
 Everything else — `GEO_API_BASE_URL`, `FOUNDRY_PROJECT_ENDPOINT`, the function app name, the
@@ -256,6 +286,7 @@ override that:
 | `FUNCTION_PLAN_TIER` | `functionPlanTier` | `FlexConsumption` | `Dedicated` |
 | `FUNCTION_APP_SERVICE_SKU` | `functionAppServiceSku` | `B1` | `P0v3` |
 | `ORCHESTRATOR_APP_SERVICE_SKU` | `orchestratorAppServiceSku` | `B1` | `P0v3` |
+| `WEB_APP_SERVICE_SKU` | `webAppServiceSku` | `B1` | `P0v3` |
 
 The last two apply only where something lands on an App Service plan: the function app on a
 `Dedicated` tier, and the orchestrator when it is self-hosted.

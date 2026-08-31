@@ -1,0 +1,10 @@
+@* Who is signed in, and the way out. Both routes are served by Microsoft.Identity.Web.UI. *@
+<AuthorizeView>
+    <Authorized>
+        <span class="me-3 text-muted">@context.User.Identity?.Name</span>
+        <a class="btn btn-sm btn-outline-secondary" href="MicrosoftIdentity/Account/SignOut">Sign out</a>
+    </Authorized>
+    <NotAuthorized>
+        <a class="btn btn-sm btn-primary" href="MicrosoftIdentity/Account/SignIn">Sign in</a>
+    </NotAuthorized>
+</AuthorizeView>

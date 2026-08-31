@@ -70,6 +70,15 @@ param orchestratorApiPath string = 'orchestrator'
 @description('App Service tier for the orchestrator. Empty resolves it from the cloud being deployed to.')
 param orchestratorAppServiceSku string = ''
 
+// The front end exists only where it has an app registration to sign users in with, which the
+// preprovision hook creates unless DEPLOY_WEB_APP says otherwise. One value therefore decides both
+// halves, and there is no state where the app is deployed but cannot authenticate anyone.
+@description('Client id of the app registration the web front end signs users in with. Empty leaves the front end out of the deployment.')
+param webAppClientId string = ''
+
+@description('App Service tier for the web front end. Empty resolves it from the cloud being deployed to.')
+param webAppServiceSku string = ''
+
 // B1 and S1 sit on older worker pools in Government that are chronically full, and the deployment
 // fails with 'No available instances to satisfy this request'. That is a scale unit out of room
 // rather than the SKU being absent, so it does not show up in a regional SKU list and there is
@@ -80,6 +89,10 @@ var appServiceSkuByCloud = {
 }
 var resolvedOrchestratorAppServiceSku = !empty(orchestratorAppServiceSku)
   ? orchestratorAppServiceSku
+  : (appServiceSkuByCloud[?environment().name] ?? 'B1')
+
+var resolvedWebAppServiceSku = !empty(webAppServiceSku)
+  ? webAppServiceSku
   : (appServiceSkuByCloud[?environment().name] ?? 'B1')
 
 var orchestratorHostByCloud = {
@@ -187,6 +200,9 @@ var orchestratorAppName = 'app-${namePrefix}-${resourceToken}'
 var orchestratorPlanName = 'plan-orch-${namePrefix}-${resourceToken}'
 var orchestratorIdentityName = 'id-orch-${namePrefix}-${resourceToken}'
 var functionIdentityName = 'id-func-${namePrefix}-${resourceToken}'
+var webAppName = 'web-${namePrefix}-${resourceToken}'
+var webPlanName = 'plan-web-${namePrefix}-${resourceToken}'
+var webIdentityName = 'id-web-${namePrefix}-${resourceToken}'
 var deploymentContainerName = 'app-package-${take(replace(functionAppName, '-', ''), 32)}-${take(resourceToken, 7)}'
 
 resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
@@ -321,6 +337,39 @@ module orchestratorApi 'modules/apim-orchestrator-api.bicep' = if (selfHostedOrc
   ]
 }
 
+var orchestratorApiBaseUrl = selfHostedOrchestrator ? orchestratorApi!.outputs.gatewayApiUrl : ''
+
+var webAppEnabled = !empty(webAppClientId)
+
+var webOrchestratorEndpoint = selfHostedOrchestrator
+  ? '${orchestratorApiBaseUrl}/responses'
+  : '${foundry.outputs.projectEndpoint}/agents/geo-orchestrator/endpoint/protocols/openai/responses?api-version=v1'
+
+// Behind the gateway the caller is a person holding a delegated scope on the orchestrator's own app
+// registration. A Foundry-hosted agent has no such registration, and the data plane is reached with
+// the account's own audience instead, which the user's Azure AI User role is what authorizes.
+var webOrchestratorScope = selfHostedOrchestrator
+  ? '${orchestratorApiAudience}/user_impersonation'
+  : '${foundry.outputs.tokenAudience}/.default'
+
+module webApp 'modules/web-appservice.bicep' = if (webAppEnabled) {
+  name: 'web-app'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    name: webAppName
+    planName: webPlanName
+    sku: resolvedWebAppServiceSku
+    identityName: webIdentityName
+    authClientId: webAppClientId
+    entraTenantId: entraTenantId
+    orchestratorEndpoint: webOrchestratorEndpoint
+    orchestratorScope: webOrchestratorScope
+    appInsightsConnectionString: backend.outputs.appInsightsConnectionString
+  }
+}
+
 output AZURE_RESOURCE_GROUP string = rg.name
 output FUNCTION_APP_RESOURCE_GROUP string = rg.name
 output FUNCTION_APP_NAME string = backend.outputs.functionAppName
@@ -349,4 +398,11 @@ output AZURE_AI_MODEL_DEPLOYMENT_NAME string = foundry.outputs.orchestratorDeplo
 output ORCHESTRATOR_HOST string = resolvedOrchestratorHost
 output ORCHESTRATOR_APP_NAME string = selfHostedOrchestrator ? orchestratorApp!.outputs.name : ''
 output ORCHESTRATOR_URL string = selfHostedOrchestrator ? orchestratorApp!.outputs.url : ''
-output ORCHESTRATOR_API_BASE_URL string = selfHostedOrchestrator ? orchestratorApi!.outputs.gatewayApiUrl : ''
+output ORCHESTRATOR_API_BASE_URL string = orchestratorApiBaseUrl
+
+// Empty when the front end was not deployed, which is what the deployment script branches on.
+output WEB_APP_NAME string = webAppEnabled ? webApp!.outputs.name : ''
+output WEB_APP_URL string = webAppEnabled ? webApp!.outputs.url : ''
+output WEB_APP_IDENTITY_PRINCIPAL_ID string = webAppEnabled ? webApp!.outputs.identityPrincipalId : ''
+output WEB_APP_ORCHESTRATOR_ENDPOINT string = webAppEnabled ? webOrchestratorEndpoint : ''
+output WEB_APP_ORCHESTRATOR_SCOPE string = webAppEnabled ? webOrchestratorScope : ''

@@ -39,6 +39,10 @@
     Stops after `azd up`. The backend, the gateway, and the four specialists are deployed; the
     hosted orchestrator is not.
 
+.PARAMETER SkipWebApp
+    Leaves the Blazor front end out entirely: no App Service, and no app registration for it. The
+    orchestrator is still reachable with ./orchestrator/ask.ps1.
+
 .PARAMETER OrchestratorHost
     Where the orchestrator runs. Auto resolves it from the cloud: the Foundry Agent Service hosts it
     in commercial, and an App Service behind the gateway does everywhere else, because Agent Service
@@ -90,7 +94,8 @@ param(
     [string]$GeoApiAudience,
 
     [switch]$ConfigureOnly,
-    [switch]$SkipOrchestrator
+    [switch]$SkipOrchestrator,
+    [switch]$SkipWebApp
 )
 
 $ErrorActionPreference = 'Stop'
@@ -219,6 +224,9 @@ Set-AzdValue APIM_SKU $ApimSku $repoRoot
 # rerun that drops the argument does not silently keep the last run's choice.
 Set-AzdValue ORCHESTRATOR_HOST $(if ($OrchestratorHost -eq 'Auto') { '' } else { $OrchestratorHost }) $repoRoot
 if ($GeoApiAudience) { Set-AzdValue GEO_API_AUDIENCE $GeoApiAudience $repoRoot }
+# Read by the preprovision hook, which decides whether to create the front end's app registration.
+# main.bicep keys off that registration alone, so this one value settles both halves.
+Set-AzdValue DEPLOY_WEB_APP $(if ($SkipWebApp) { 'false' } else { 'true' }) $repoRoot
 
 # azd validates the required Bicep parameters before it runs preprovision, so geoApiAudience has to
 # exist by now even though the hook is what produces it. Running the hook here fills it in; the hook
@@ -288,44 +296,32 @@ else {
 
     Write-Step "Publishing the orchestrator to App Service '$($config['ORCHESTRATOR_APP_NAME'])'"
 
-    $publishDir = Join-Path ([IO.Path]::GetTempPath()) "geo-orchestrator-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
-    $package = "$publishDir.zip"
-    try {
-        Invoke-Native dotnet @('publish', (Join-Path $orchestratorRoot 'src/geo-orchestrator/geo-orchestrator.csproj'),
-            '--configuration', 'Release', '--output', $publishDir)
+    & (Join-Path $PSScriptRoot 'Publish-AppService.ps1') `
+        -ProjectPath (Join-Path $orchestratorRoot 'src/geo-orchestrator/geo-orchestrator.csproj') `
+        -ResourceGroup $config['AZURE_RESOURCE_GROUP'] `
+        -AppName $config['ORCHESTRATOR_APP_NAME']
+}
 
-        # Compress-Archive, and ZipFile.CreateFromDirectory on Windows PowerShell, separate nested
-        # entry paths with backslashes. Linux Kudu unzips those as one long filename instead of a
-        # directory, and then rsync cannot stat the result and fails the whole deployment. Naming the
-        # entries here keeps the separator right no matter which shell runs the script.
-        $archive = [System.IO.Compression.ZipFile]::Open($package, [System.IO.Compression.ZipArchiveMode]::Create)
-        try {
-            foreach ($file in Get-ChildItem $publishDir -Recurse -File) {
-                $entry = $file.FullName.Substring($publishDir.Length + 1).Replace('\', '/')
-                [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $file.FullName, $entry) | Out-Null
-            }
-        }
-        finally {
-            $archive.Dispose()
-        }
+# Deployed last, because both the redirect URI it registers and the orchestrator it is pointed at
+# are settled by the steps above.
+$config = & (Join-Path $PSScriptRoot 'Get-AzdConfig.ps1')
 
-        # Without --clean, Kudu rsyncs over whatever is already in wwwroot, so a single undeletable
-        # leftover file fails the whole deployment.
-        Invoke-Native az @('webapp', 'deploy',
-            '--resource-group', $config['AZURE_RESOURCE_GROUP'],
-            '--name', $config['ORCHESTRATOR_APP_NAME'],
-            '--src-path', $package, '--type', 'zip', '--clean', 'true')
-    }
-    finally {
-        Remove-Item $publishDir -Recurse -Force -ErrorAction SilentlyContinue
-        Remove-Item $package -Force -ErrorAction SilentlyContinue
-    }
+if ($config['WEB_APP_NAME']) {
+    Write-Step "Configuring the web front end's app registration"
+    & (Join-Path $repoRoot 'webapp/Set-WebAppRegistration.ps1')
+
+    Write-Step "Publishing the web front end to App Service '$($config['WEB_APP_NAME'])'"
+    & (Join-Path $PSScriptRoot 'Publish-AppService.ps1') `
+        -ProjectPath (Join-Path $repoRoot 'webapp/src/geo-chat-web/geo-chat-web.csproj') `
+        -ResourceGroup $config['AZURE_RESOURCE_GROUP'] `
+        -AppName $config['WEB_APP_NAME']
 }
 
 Write-Step 'Done'
 "  Gateway         $($config['GEO_API_BASE_URL'])"
 "  Foundry project $($config['FOUNDRY_PROJECT_ENDPOINT'])"
 if ($config['ORCHESTRATOR_API_BASE_URL']) { "  Orchestrator    $($config['ORCHESTRATOR_API_BASE_URL'])" }
+if ($config['WEB_APP_URL']) { "  Web front end   $($config['WEB_APP_URL'])" }
 ''
 "Smoke test:"
 "  ./orchestrator/ask.ps1 -Message 'Conditions at 51.5072, -0.1276?' -Deployed"

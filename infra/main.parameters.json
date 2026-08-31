@@ -23,6 +23,8 @@
     "orchestratorHost": { "value": "${ORCHESTRATOR_HOST}" },
     "orchestratorApiAudience": { "value": "${ORCHESTRATOR_API_AUDIENCE}" },
     "orchestratorAppServiceSku": { "value": "${ORCHESTRATOR_APP_SERVICE_SKU}" },
+    "webAppClientId": { "value": "${WEB_APP_CLIENT_ID}" },
+    "webAppServiceSku": { "value": "${WEB_APP_SERVICE_SKU}" },
     "orchestratorDeploymentName": { "value": "${ORCHESTRATOR_MODEL=gpt-4.1}" },
     "specialistDeploymentName": { "value": "${SPECIALIST_MODEL=gpt-4-1-mini}" }
   }

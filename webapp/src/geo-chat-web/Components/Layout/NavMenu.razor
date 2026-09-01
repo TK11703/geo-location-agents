@@ -1,12 +1,13 @@
+@implements IDisposable
+@inject AskSession Session
+
 <div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
         <a class="navbar-brand" href="">Geo-Location Agents</a>
     </div>
 </div>
 
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
-
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+<div class="nav-scrollable">
     <nav class="nav flex-column">
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
@@ -14,4 +15,32 @@
             </NavLink>
         </div>
     </nav>
+
+    <h2 class="nav-section px-3">History</h2>
+
+    @if (Session.History.Count == 0)
+    {
+        <p class="nav-empty px-3">Questions you ask show up here.</p>
+    }
+    else
+    {
+        <div class="list-group history px-3">
+            @foreach (var entry in Session.History)
+            {
+                <button type="button" class="list-group-item list-group-item-action history-item"
+                        @key="entry.Question" @onclick="() => Session.RequestAsync(entry.Question)">
+                    <div class="history-submitted">@entry.Asked.ToLocalTime().ToString("g")</div>
+                    <div class="history-question">@entry.Question</div>
+                </button>
+            }
+        </div>
+    }
 </div>
+
+@code {
+    protected override void OnInitialized() => Session.HistoryChanged += OnHistoryChanged;
+
+    public void Dispose() => Session.HistoryChanged -= OnHistoryChanged;
+
+    private void OnHistoryChanged() => InvokeAsync(StateHasChanged);
+}

@@ -1,0 +1,31 @@
+@implements IDisposable
+@inject AskSession Session
+
+@* The questions asked this session, as a list that asks one again on click. *@
+<h2 class="pane-title">History</h2>
+
+@if (Session.History.Count == 0)
+{
+    <p class="pane-empty">Questions you ask show up here.</p>
+}
+else
+{
+    <div class="list-group">
+        @foreach (var entry in Session.History)
+        {
+            <button type="button" class="list-group-item list-group-item-action history-item"
+                    @key="entry.Question" @onclick="() => Session.RequestAsync(entry.Question)">
+                <div class="history-submitted">@entry.Asked.ToLocalTime().ToString("g")</div>
+                <div class="history-question">@entry.Question</div>
+            </button>
+        }
+    </div>
+}
+
+@code {
+    protected override void OnInitialized() => Session.HistoryChanged += OnHistoryChanged;
+
+    public void Dispose() => Session.HistoryChanged -= OnHistoryChanged;
+
+    private void OnHistoryChanged() => InvokeAsync(StateHasChanged);
+}

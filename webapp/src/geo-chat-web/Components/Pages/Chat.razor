@@ -11,101 +11,115 @@
 
 <PageTitle>Ask the orchestrator</PageTitle>
 
-<h1>Ask the orchestrator</h1>
-
-<p class="text-muted">
-    Name a place or give coordinates. Each question is answered on its own: the orchestrator keeps
-    no conversation, so the exchanges below are a record rather than context.
-</p>
-
-<section class="ask-panel card shadow mb-4">
-    <div class="card-body">
-        <label for="question" class="form-label ask-label">Ask a question</label>
-        <textarea id="question" class="form-control question-box" rows="1" maxlength="@QuestionLimit" autofocus
-                  @ref="_questionBox" placeholder="Conditions at 47.6062, -122.3321?"></textarea>
-        <div class="form-text">Enter to ask. Shift+Enter for a new line. Ask again while one is running and it queues.</div>
+@* The hero holds the question box, and holds still: the panes below it are what scroll. *@
+<section class="hero bg-body-tertiary border-bottom">
+    <div class="container py-4">
+        <div class="row">
+            <div class="col-lg-9 col-xl-8 mx-auto">
+                <h1 class="fw-light h3 mb-1">Ask a question</h1>
+                <p class="text-body-secondary mb-3">
+                    Name a place or give coordinates. Each question is answered on its own: the
+                    orchestrator keeps no conversation, so the exchanges below are a record rather
+                    than context.
+                </p>
+                <label for="question" class="visually-hidden">Ask a question</label>
+                <textarea id="question" class="form-control question-box" rows="1" maxlength="@QuestionLimit" autofocus
+                          @ref="_questionBox" placeholder="Conditions at 47.6062, -122.3321?"></textarea>
+                <div class="form-text">Enter to ask. Shift+Enter for a new line. Ask again while one is running and it queues.</div>
+            </div>
+        </div>
     </div>
 </section>
 
-<div class="chat">
-    @if (_turns.Count > 0)
-    {
-        <h2 class="h6 text-uppercase text-muted mb-3">Requests this session (@_turns.Count)</h2>
-    }
+<div class="workspace container-fluid">
+    <div class="row">
+        <aside class="col-12 col-lg-4 col-xl-3 workspace-pane border-end">
+            <HistoryPanel />
+        </aside>
 
-    @foreach (var turn in _turns)
-    {
-        <section class="card mb-3 shadow-sm">
-            <h3 class="card-header turn-question d-flex align-items-center gap-3 mb-0 h6 fw-normal">
-                <button type="button" class="turn-toggle flex-grow-1 d-flex align-items-center gap-2 text-start"
-                        @onclick="() => turn.Expanded = !turn.Expanded"
-                        aria-expanded="@turn.Expanded" aria-controls="@($"turn-{turn.Number}")">
-                    <span class="badge rounded-pill text-bg-primary">#@turn.Number</span>
-                    <span class="turn-question-text">@turn.Question</span>
-                </button>
-                <span class="badge text-nowrap @StatusStyle(turn)">@StatusText(turn)</span>
-            </h3>
+        <section class="col workspace-pane">
+            <h2 class="pane-title">Results@(_turns.Count > 0 ? $" ({_turns.Count})" : string.Empty)</h2>
 
-            @if (turn.Expanded)
+            @if (_turns.Count == 0)
             {
-                <div class="card-body" id="@($"turn-{turn.Number}")">
-                    @if (turn.Answer is not null)
+                <p class="pane-empty">Answers appear here, newest first.</p>
+            }
+
+            @foreach (var turn in _turns)
+            {
+                <section class="card mb-3 shadow-sm">
+                    <h3 class="card-header turn-question d-flex align-items-center gap-3 mb-0 h6 fw-normal">
+                        <button type="button" class="turn-toggle flex-grow-1 d-flex align-items-center gap-2 text-start"
+                                @onclick="() => turn.Expanded = !turn.Expanded"
+                                aria-expanded="@turn.Expanded" aria-controls="@($"turn-{turn.Number}")">
+                            <span class="badge rounded-pill text-bg-primary">#@turn.Number</span>
+                            <span class="turn-question-text">@turn.Question</span>
+                        </button>
+                        <span class="badge text-nowrap @StatusStyle(turn)">@StatusText(turn)</span>
+                    </h3>
+
+                    @if (turn.Expanded)
                     {
-                        <div class="turn-label">Orchestrator</div>
-                        <div class="answer">
-                            @foreach (var (text, isLink) in AnswerSegments(turn.Answer))
+                        <div class="card-body" id="@($"turn-{turn.Number}")">
+                            @if (turn.Answer is not null)
                             {
-                                if (isLink)
-                                {
-                                    <a href="@text" target="_blank" rel="noopener noreferrer">@text</a>
-                                }
-                                else
-                                {
-                                    @text
-                                }
+                                <div class="turn-label">Orchestrator</div>
+                                <div class="answer">
+                                    @foreach (var (text, isLink) in AnswerSegments(turn.Answer))
+                                    {
+                                        if (isLink)
+                                        {
+                                            <a href="@text" target="_blank" rel="noopener noreferrer">@text</a>
+                                        }
+                                        else
+                                        {
+                                            @text
+                                        }
+                                    }
+                                </div>
+                            }
+                            else if (turn.Error is not null)
+                            {
+                                <div class="alert alert-danger mb-0" role="alert">@turn.Error</div>
+                            }
+                            else if (turn.Started is null)
+                            {
+                                <div class="text-muted">Queued behind the questions ahead of it.</div>
+                            }
+                            else
+                            {
+                                <div class="d-flex align-items-center text-muted">
+                                    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                    Consulting the specialists. A cold model can take a couple of minutes.
+                                </div>
                             }
                         </div>
-                    }
-                    else if (turn.Error is not null)
-                    {
-                        <div class="alert alert-danger mb-0" role="alert">@turn.Error</div>
-                    }
-                    else if (turn.Started is null)
-                    {
-                        <div class="text-muted">Queued behind the questions ahead of it.</div>
-                    }
-                    else
-                    {
-                        <div class="d-flex align-items-center text-muted">
-                            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                            Consulting the specialists. A cold model can take a couple of minutes.
-                        </div>
-                    }
-                </div>
 
-                <div class="card-footer bg-light">
-                    <dl class="turn-metrics mb-0">
-                        <div>
-                            <dt>Sent</dt>
-                            <dd>@turn.Asked.ToLocalTime().ToString("T")</dd>
+                        <div class="card-footer bg-light">
+                            <dl class="turn-metrics mb-0">
+                                <div>
+                                    <dt>Sent</dt>
+                                    <dd>@turn.Asked.ToLocalTime().ToString("T")</dd>
+                                </div>
+                                <div>
+                                    <dt>Returned</dt>
+                                    <dd>@(turn.Returned is { } returned ? returned.ToLocalTime().ToString("T") : "pending")</dd>
+                                </div>
+                                <div>
+                                    <dt>Elapsed</dt>
+                                    <dd>@(turn.Returned is { } finished ? $"{(finished - turn.Asked).TotalSeconds:0.0} s" : "pending")</dd>
+                                </div>
+                                <div>
+                                    <dt>Date</dt>
+                                    <dd>@turn.Asked.ToLocalTime().ToString("d")</dd>
+                                </div>
+                            </dl>
                         </div>
-                        <div>
-                            <dt>Returned</dt>
-                            <dd>@(turn.Returned is { } returned ? returned.ToLocalTime().ToString("T") : "pending")</dd>
-                        </div>
-                        <div>
-                            <dt>Elapsed</dt>
-                            <dd>@(turn.Returned is { } finished ? $"{(finished - turn.Asked).TotalSeconds:0.0} s" : "pending")</dd>
-                        </div>
-                        <div>
-                            <dt>Date</dt>
-                            <dd>@turn.Asked.ToLocalTime().ToString("d")</dd>
-                        </div>
-                    </dl>
-                </div>
+                    }
+                </section>
             }
         </section>
-    }
+    </div>
 </div>
 
 @code {

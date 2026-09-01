@@ -1,18 +1,58 @@
 @inherits LayoutComponentBase
 
+@* The header is the only chrome: a bar that never scrolls, over a panel the toggler reveals. *@
 <div class="page">
-    <div class="sidebar">
-        <NavMenu @rendermode="InteractiveServer" />
-    </div>
-
-    <main>
-        <div class="top-row px-4 justify-content-end">
-            <LoginDisplay />
+    <header class="site-header">
+        <div class="collapse text-bg-dark" id="siteInfo" data-bs-theme="dark">
+            <div class="container">
+                <div class="row">
+                    <div class="col-sm-8 col-md-7 py-4">
+                        <h4>About</h4>
+                        <p class="text-body-secondary mb-0">
+                            Geo-Location Agents answers questions about a place. Name one, or give
+                            coordinates, and an orchestrator puts the question to a set of
+                            specialists &mdash; place resolution, location, terrain, weather, and
+                            mobility &mdash; that read Azure Maps through an API gateway. What comes
+                            back is a single written report with the sources it rests on. Nothing is
+                            carried between questions: each is answered on its own, so a follow-up
+                            should be asked as a complete question.
+                        </p>
+                    </div>
+                    <div class="col-sm-4 offset-md-1 py-4">
+                        <h4>Contact</h4>
+                        <ul class="list-unstyled">
+                            <li>
+                                <a class="text-white" href="https://github.com/TK11703/geo-location-agents"
+                                   target="_blank" rel="noopener noreferrer">
+                                    TK11703/geo-location-agents on GitHub
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <article class="content px-4">
-            @Body
-        </article>
+        <div class="navbar bg-dark shadow-sm" data-bs-theme="dark">
+            <div class="container">
+                <a class="navbar-brand d-flex align-items-center gap-2" href="">
+                    <SiteIcon />
+                    <strong>Geo-Location Agents</strong>
+                </a>
+                <div class="d-flex align-items-center gap-3">
+                    <LoginDisplay />
+                    <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#siteInfo" aria-controls="siteInfo" aria-expanded="false"
+                            aria-label="Toggle about and contact">
+                        <span class="navbar-toggler-icon"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        @Body
     </main>
 </div>
 

@@ -1,0 +1,19 @@
+/* A question is never abbreviated here, because the abbreviation of one is rarely distinguishable
+   from the abbreviation of another. */
+.history-item {
+    margin-bottom: 0.5rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: var(--bs-border-radius);
+    font-size: 0.85rem;
+    text-align: left;
+}
+
+.history-submitted {
+    font-weight: 600;
+    color: var(--bs-secondary-color);
+}
+
+.history-question {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}

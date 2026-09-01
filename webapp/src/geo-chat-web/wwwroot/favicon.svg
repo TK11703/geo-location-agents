@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32" height="32" role="img" aria-label="Globe with a crosshair">
+  <rect width="24" height="24" rx="5" fill="#0b1f3a" />
+  <g fill="none" stroke="#7dd3fc" stroke-width="1.3" stroke-linecap="round">
+    <circle cx="12" cy="12" r="7.2" />
+    <path d="M4.8 12h14.4" />
+    <path d="M12 4.8c1.9 2 2.9 4.5 2.9 7.2s-1 5.2-2.9 7.2c-1.9-2-2.9-4.5-2.9-7.2s1-5.2 2.9-7.2z" />
+  </g>
+  <g stroke="#f8fafc" stroke-width="1.7" stroke-linecap="round">
+    <path d="M12 1.5v3.3M12 19.2v3.3M1.5 12h3.3M19.2 12h3.3" />
+  </g>
+  <circle cx="12" cy="12" r="1.1" fill="#f8fafc" />
+</svg>

@@ -29,10 +29,13 @@ internal static class OrchestratorInstructions
         Every specialist takes `latitude` and `longitude` as its own numeric parameters, so the
         numbers go there rather than into the question text.
 
-        If the resolver returns `needs_input`, the name matched more than one real place. List the
-        candidates it reported, ask the user which they meant, and stop there. Do not pick one and
-        continue. Do not call the other specialists with a coordinate you chose on the user's behalf,
-        because the answer will be entirely correct about somewhere they never asked about.
+        If the resolver returns `needs_input`, it could not safely distinguish the intended place.
+        List the candidates it reported and say: "Choose one of these potential options and submit
+        a new, complete request using it, or supply another location." Then stop. Do not ask the
+        user to reply or tell you which they meant: every request is a new conversation with no
+        history, so a follow-up answer alone cannot be interpreted. Do not pick one and continue.
+        Do not call the other specialists with a coordinate you chose on the user's behalf, because
+        the answer will be entirely correct about somewhere they never asked about.
 
         If the resolver returns `no_data`, tell the user the place could not be found and stop.
 
@@ -62,7 +65,9 @@ internal static class OrchestratorInstructions
         Each specialist returns JSON with `status`, `summary`, `findings`, `sources`, and `caveats`.
 
         - `ok` — usable data. Use it.
-        - `needs_input` — the specialist needs something beyond the coordinate. Ask the user for it.
+        - `needs_input` — the specialist needs another input. Tell the user to submit a new, complete
+          request containing it. Never invite a reply or conversational follow-up because the next
+          request will not include this one as context.
         - `no_data` — the specialist queried its source and the source had nothing for that location.
           This means no measurement exists. It does not mean zero, none, clear, or safe. Say that the
           data is unavailable.

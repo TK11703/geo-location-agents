@@ -61,4 +61,85 @@ h1:focus {
 /* Answers arrive as plain text whose line breaks carry the structure of the report. */
 .answer {
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
+
+/* Asking is the point of the page, so the box sits in a panel of its own rather than inline. */
+.ask-panel {
+    border: 1px solid var(--bs-primary-border-subtle);
+    border-top: 4px solid var(--bs-primary);
+}
+
+.ask-label {
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--bs-primary-text-emphasis);
+    margin-bottom: 0.5rem;
+}
+
+/* Height is set from the content by script, so neither a scrollbar nor a drag handle applies. */
+.question-box {
+    resize: none;
+    overflow-y: hidden;
+    font-size: 1.05rem;
+    padding: 0.625rem 0.875rem;
+}
+
+    .question-box:focus {
+        border-color: var(--bs-primary);
+        box-shadow: 0 0 0 0.25rem rgba(var(--bs-primary-rgb), 0.3);
+    }
+
+/* The question is what each card is about, so it carries the accent the rest of the card does not. */
+.turn-question {
+    background-color: var(--bs-primary-bg-subtle);
+    border-left: 4px solid var(--bs-primary);
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+}
+
+.turn-question-text {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--bs-emphasis-color);
+}
+
+/* The whole header is the collapse control, so it drops the button chrome and keeps the text. */
+.turn-toggle {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+}
+
+    .turn-toggle:hover .turn-question-text {
+        text-decoration: underline;
+    }
+
+.turn-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--bs-secondary-color);
+    margin-bottom: 0.35rem;
+}
+
+.turn-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 2rem;
+}
+
+    .turn-metrics dt {
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--bs-secondary-color);
+    }
+
+    .turn-metrics dd {
+        margin-bottom: 0;
+        font-variant-numeric: tabular-nums;
+    }

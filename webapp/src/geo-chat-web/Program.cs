@@ -36,6 +36,9 @@ builder.Services.AddHttpClient<OrchestratorClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(orchestrator.TimeoutSeconds);
 });
 
+// Scoped is the circuit, which is what the history and the sidebar both belong to.
+builder.Services.AddScoped<AskSession>();
+
 builder.Services.AddCascadingAuthenticationState();
 
 // The sign-in and sign-out routes Microsoft.Identity.Web serves are MVC controllers, so the app

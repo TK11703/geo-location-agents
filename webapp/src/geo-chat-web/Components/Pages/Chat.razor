@@ -1,9 +1,13 @@
 @page "/"
+@using System.Text.RegularExpressions
 @using Microsoft.Identity.Web
 @rendermode InteractiveServer
+@implements IAsyncDisposable
 @inject OrchestratorClient Orchestrator
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject MicrosoftIdentityConsentAndConditionalAccessHandler ConsentHandler
+@inject AskSession Session
+@inject IJSRuntime JS
 
 <PageTitle>Ask the orchestrator</PageTitle>
 
@@ -14,73 +18,214 @@
     no conversation, so the exchanges below are a record rather than context.
 </p>
 
+<section class="ask-panel card shadow mb-4">
+    <div class="card-body">
+        <label for="question" class="form-label ask-label">Ask a question</label>
+        <textarea id="question" class="form-control question-box" rows="1" maxlength="@QuestionLimit" autofocus
+                  @ref="_questionBox" placeholder="Conditions at 47.6062, -122.3321?"></textarea>
+        <div class="form-text">Enter to ask. Shift+Enter for a new line. Ask again while one is running and it queues.</div>
+    </div>
+</section>
+
 <div class="chat">
+    @if (_turns.Count > 0)
+    {
+        <h2 class="h6 text-uppercase text-muted mb-3">Requests this session (@_turns.Count)</h2>
+    }
+
     @foreach (var turn in _turns)
     {
-        <div class="card mb-3 shadow-sm">
-            <div class="card-header bg-light fw-semibold">@turn.Question</div>
-            <div class="card-body">
-                @if (turn.Answer is not null)
-                {
-                    <div class="answer">@turn.Answer</div>
-                }
-                else if (turn.Error is not null)
-                {
-                    <div class="alert alert-danger mb-0" role="alert">@turn.Error</div>
-                }
-                else
-                {
-                    <div class="d-flex align-items-center text-muted">
-                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                        Consulting the specialists. A cold model can take a couple of minutes.
-                    </div>
-                }
-            </div>
-        </div>
+        <section class="card mb-3 shadow-sm">
+            <h3 class="card-header turn-question d-flex align-items-center gap-3 mb-0 h6 fw-normal">
+                <button type="button" class="turn-toggle flex-grow-1 d-flex align-items-center gap-2 text-start"
+                        @onclick="() => turn.Expanded = !turn.Expanded"
+                        aria-expanded="@turn.Expanded" aria-controls="@($"turn-{turn.Number}")">
+                    <span class="badge rounded-pill text-bg-primary">#@turn.Number</span>
+                    <span class="turn-question-text">@turn.Question</span>
+                </button>
+                <span class="badge text-nowrap @StatusStyle(turn)">@StatusText(turn)</span>
+            </h3>
+
+            @if (turn.Expanded)
+            {
+                <div class="card-body" id="@($"turn-{turn.Number}")">
+                    @if (turn.Answer is not null)
+                    {
+                        <div class="turn-label">Orchestrator</div>
+                        <div class="answer">
+                            @foreach (var (text, isLink) in AnswerSegments(turn.Answer))
+                            {
+                                if (isLink)
+                                {
+                                    <a href="@text" target="_blank" rel="noopener noreferrer">@text</a>
+                                }
+                                else
+                                {
+                                    @text
+                                }
+                            }
+                        </div>
+                    }
+                    else if (turn.Error is not null)
+                    {
+                        <div class="alert alert-danger mb-0" role="alert">@turn.Error</div>
+                    }
+                    else if (turn.Started is null)
+                    {
+                        <div class="text-muted">Queued behind the questions ahead of it.</div>
+                    }
+                    else
+                    {
+                        <div class="d-flex align-items-center text-muted">
+                            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                            Consulting the specialists. A cold model can take a couple of minutes.
+                        </div>
+                    }
+                </div>
+
+                <div class="card-footer bg-light">
+                    <dl class="turn-metrics mb-0">
+                        <div>
+                            <dt>Sent</dt>
+                            <dd>@turn.Asked.ToLocalTime().ToString("T")</dd>
+                        </div>
+                        <div>
+                            <dt>Returned</dt>
+                            <dd>@(turn.Returned is { } returned ? returned.ToLocalTime().ToString("T") : "pending")</dd>
+                        </div>
+                        <div>
+                            <dt>Elapsed</dt>
+                            <dd>@(turn.Returned is { } finished ? $"{(finished - turn.Asked).TotalSeconds:0.0} s" : "pending")</dd>
+                        </div>
+                        <div>
+                            <dt>Date</dt>
+                            <dd>@turn.Asked.ToLocalTime().ToString("d")</dd>
+                        </div>
+                    </dl>
+                </div>
+            }
+        </section>
     }
 </div>
 
-<EditForm Model="_form" OnValidSubmit="AskAsync" class="mt-4">
-    <DataAnnotationsValidator />
-
-    <div class="mb-2">
-        <label for="question" class="form-label">Question</label>
-        <InputTextArea id="question" @bind-Value="_form.Question" class="form-control" rows="3"
-                       placeholder="Conditions at 47.6062, -122.3321?" disabled="@_busy" />
-        <ValidationMessage For="() => _form.Question" class="text-danger" />
-    </div>
-
-    <button type="submit" class="btn btn-primary" disabled="@_busy">
-        @if (_busy)
-        {
-            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-        }
-        Ask
-    </button>
-</EditForm>
-
 @code {
-    private readonly List<Turn> _turns = [];
-    private readonly QuestionForm _form = new();
-    private bool _busy;
+    private static readonly Regex UrlPattern = new(@"https?://[^\s<>""]+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    private async Task AskAsync()
+    // Sentence punctuation that trails a URL belongs to the sentence, not the address.
+    private static readonly char[] TrailingPunctuation = ['.', ',', ';', ':', '!', '?', ')'];
+
+    private const int QuestionLimit = 2000;
+
+    private readonly List<Turn> _turns = [];
+    private readonly Queue<Turn> _queue = new();
+    private ElementReference _questionBox;
+    private DotNetObjectReference<Chat>? _self;
+    private IJSObjectReference? _questionBoxScript;
+    private bool _draining;
+
+    protected override void OnInitialized() => Session.Requested += OnRequestedAsync;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        var question = _form.Question?.Trim();
-        if (string.IsNullOrEmpty(question))
+        if (!firstRender)
         {
             return;
         }
 
-        var turn = new Turn(question);
-        _turns.Add(turn);
-        _form.Question = string.Empty;
-        _busy = true;
+        _self = DotNetObjectReference.Create(this);
+        _questionBoxScript = await JS.InvokeAsync<IJSObjectReference>("import", "./js/question-box.js");
+        await _questionBoxScript.InvokeVoidAsync("connect", _questionBox, _self);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Session.Requested -= OnRequestedAsync;
+        _self?.Dispose();
+
+        if (_questionBoxScript is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _questionBoxScript.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit is already gone, and with it the module reference.
+        }
+    }
+
+    // The question box owns the Enter key and hands the text over directly, so nothing depends on a
+    // form post or on a binding that a not-yet-connected circuit would have missed.
+    [JSInvokable]
+    public Task AskAsync(string question) => SubmitAsync(question);
+
+    private Task OnRequestedAsync(string question) => InvokeAsync(() => SubmitAsync(question));
+
+    private async Task SubmitAsync(string question)
+    {
+        if (string.IsNullOrWhiteSpace(question) || question.Length > QuestionLimit)
+        {
+            return;
+        }
+
+        question = question.Trim();
+        Session.Record(question);
+
+        // Newest first, so the answer to what was just asked lands directly under the box, and the
+        // ones before it fold away rather than pushing it off the screen. The turn the orchestrator
+        // is working on stays open, since its answer is the one still arriving.
+        foreach (var earlier in _turns)
+        {
+            earlier.Expanded = earlier is { Started: not null, Returned: null };
+        }
+
+        var turn = new Turn(_turns.Count + 1, question);
+        _turns.Insert(0, turn);
+        _queue.Enqueue(turn);
+
+        // A call from script or from the sidebar is not this component's UI event, so nothing
+        // renders unless it is asked for.
+        StateHasChanged();
+
+        await DrainAsync();
+    }
+
+    // One question at a time: the orchestrator call is long, and a queued turn is already on screen
+    // saying so.
+    private async Task DrainAsync()
+    {
+        if (_draining)
+        {
+            return;
+        }
+
+        _draining = true;
+
+        try
+        {
+            while (_queue.Count > 0)
+            {
+                await RunAsync(_queue.Dequeue());
+            }
+        }
+        finally
+        {
+            _draining = false;
+        }
+    }
+
+    private async Task RunAsync(Turn turn)
+    {
+        turn.Started = DateTimeOffset.Now;
+        StateHasChanged();
 
         try
         {
             var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
-            turn.Answer = await Orchestrator.AskAsync(question, state.User);
+            turn.Answer = await Orchestrator.AskAsync(turn.Question, state.User);
         }
         catch (MicrosoftIdentityWebChallengeUserException ex)
         {
@@ -95,20 +240,64 @@
         }
         finally
         {
-            _busy = false;
+            turn.Returned = DateTimeOffset.Now;
+            StateHasChanged();
         }
     }
 
-    private sealed class QuestionForm
+    private static string StatusText(Turn turn) => turn switch
     {
-        [Required(ErrorMessage = "Ask something first.")]
-        [StringLength(2000, ErrorMessage = "Questions are limited to 2000 characters.")]
-        public string? Question { get; set; }
+        { Error: not null } => "Failed",
+        { Answer: not null } => "Answered",
+        { Started: null } => "Queued",
+        _ => "Working"
+    };
+
+    private static string StatusStyle(Turn turn) => turn switch
+    {
+        { Error: not null } => "text-bg-danger",
+        { Answer: not null } => "text-bg-success",
+        { Started: null } => "text-bg-warning",
+        _ => "text-bg-secondary"
+    };
+
+    // Answers arrive as plain text, so any URL in them is only a link once it is rendered as one.
+    private static IEnumerable<(string Text, bool IsLink)> AnswerSegments(string answer)
+    {
+        var position = 0;
+
+        foreach (Match match in UrlPattern.Matches(answer))
+        {
+            var url = match.Value.TrimEnd(TrailingPunctuation);
+
+            if (match.Index > position)
+            {
+                yield return (answer[position..match.Index], false);
+            }
+
+            yield return (url, true);
+            position = match.Index + url.Length;
+        }
+
+        if (position < answer.Length)
+        {
+            yield return (answer[position..], false);
+        }
     }
 
-    private sealed class Turn(string question)
+    private sealed class Turn(int number, string question)
     {
+        public int Number { get; } = number;
+
         public string Question { get; } = question;
+
+        public bool Expanded { get; set; } = true;
+
+        public DateTimeOffset Asked { get; } = DateTimeOffset.Now;
+
+        public DateTimeOffset? Started { get; set; }
+
+        public DateTimeOffset? Returned { get; set; }
 
         public string? Answer { get; set; }
 

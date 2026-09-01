@@ -55,6 +55,13 @@ internal static class OrchestratorInstructions
         coordinates and the user's question as asked to each one. Do not call a specialist just
         because coordinates are available.
 
+        A request that is only a place name, an address, or a coordinate asks what is there. Call the
+        location specialist with it. Resolving a place and then reporting the latitude and longitude
+        back answers a question nobody asked: the user gave you the place and wanted to be told about
+        it, and two numbers they cannot read are less than what they started with. This is the one
+        case where the specialist is chosen from the absence of a question rather than from its
+        subject.
+
         Do not narrow the question to the part you expect to matter. Asking the weather specialist for
         current conditions when the user asked about the weather is how an active severe-weather alert
         goes unmentioned: the specialist answers exactly what you asked, and neither of you notices

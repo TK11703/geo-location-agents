@@ -1,7 +1,8 @@
 @implements IDisposable
 @inject AskSession Session
+@inject IJSRuntime JS
 
-@* The questions asked this session, as a list that asks one again on click. *@
+@* The questions asked this session, with separate actions so the text remains selectable. *@
 <h2 class="pane-title">History</h2>
 
 @if (Session.History.Count == 0)
@@ -13,11 +14,22 @@ else
     <div class="list-group">
         @foreach (var entry in Session.History)
         {
-            <button type="button" class="list-group-item list-group-item-action history-item"
-                    @key="entry.Question" @onclick="() => Session.RequestAsync(entry.Question)">
-                <div class="history-submitted">@entry.Asked.ToLocalTime().ToString("g")</div>
+            <div class="list-group-item history-item" @key="entry">
+                <div class="history-heading">
+                    <div class="history-submitted">@entry.Asked.ToLocalTime().ToString("g")</div>
+                    <div class="history-actions">
+                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                                title="Copy request" @onclick="() => CopyQuestionAsync(entry.Question)">
+                            Copy
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-primary"
+                                @onclick="() => Session.RequestAsync(entry.Question)">
+                            Ask again
+                        </button>
+                    </div>
+                </div>
                 <div class="history-question">@entry.Question</div>
-            </button>
+            </div>
         }
     </div>
 }
@@ -28,4 +40,7 @@ else
     public void Dispose() => Session.HistoryChanged -= OnHistoryChanged;
 
     private void OnHistoryChanged() => InvokeAsync(StateHasChanged);
+
+    private async Task CopyQuestionAsync(string question) =>
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", question);
 }

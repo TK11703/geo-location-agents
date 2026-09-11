@@ -107,6 +107,7 @@ h1:focus {
 
 /* The whole header is the collapse control, so it drops the button chrome and keeps the text. */
 .turn-toggle {
+    min-width: 0;
     padding: 0;
     border: 0;
     background: none;

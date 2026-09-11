@@ -55,6 +55,10 @@
                             <span class="badge rounded-pill text-bg-primary">#@turn.Number</span>
                             <span class="turn-question-text">@turn.Question</span>
                         </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                                title="Copy request" @onclick="() => CopyQuestionAsync(turn.Question)">
+                            Copy
+                        </button>
                         <span class="badge text-nowrap @StatusStyle(turn)">@StatusText(turn)</span>
                     </h3>
 
@@ -175,6 +179,9 @@
     // form post or on a binding that a not-yet-connected circuit would have missed.
     [JSInvokable]
     public Task AskAsync(string question) => SubmitAsync(question);
+
+    private async Task CopyQuestionAsync(string question) =>
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", question);
 
     private Task OnRequestedAsync(string question) => InvokeAsync(() => SubmitAsync(question));
 

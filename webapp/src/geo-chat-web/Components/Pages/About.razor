@@ -1,0 +1,239 @@
+@page "/about"
+@attribute [AllowAnonymous]
+
+<PageTitle>About Geo-Location Agents</PageTitle>
+
+@* The page owns its scrolling: the layout gives the body a fixed share of the viewport. *@
+<div class="about">
+    <div class="container py-4">
+        <div class="row">
+            <div class="col-lg-10 col-xl-9 mx-auto">
+                <h1 class="fw-light h3 mb-3">About Geo-Location Agents</h1>
+
+                <p class="lead">
+                    A geospatial question answering system. A user asks about a point on the ground,
+                    specialist agents each answer for the domain they own, and an orchestrator merges
+                    those answers into one report that states what is known, what is missing, and
+                    where it came from.
+                </p>
+                <p>
+                    The .NET 10 Azure Functions application in
+                    <code>functionapp/src/geo-location-function-app</code> is the data layer
+                    underneath all of that. Each endpoint is independent and does exactly one thing:
+                    it retrieves data from a single upstream source and returns it. Nothing in that
+                    application decides whether a site is reachable or serviceable. Every judgment of
+                    that kind is made above it, by the agents.
+                </p>
+
+                <h2 class="fw-light h4 mt-5 mb-3">How it works</h2>
+                <p>
+                    Five specialist agents sit between the orchestrator and the data. Each one owns a
+                    domain, holds only the tools for that domain, and returns a fixed JSON report
+                    rather than prose. The orchestrator has no data of its own and no tools other
+                    than the specialists themselves.
+                </p>
+                <p>
+                    Four of them answer questions about a coordinate. The fifth, the place resolver,
+                    is the only way to obtain one: it turns a written place name or address into
+                    latitude and longitude. When a question names a place instead of giving numbers,
+                    the orchestrator calls the resolver first and alone, then fans out to the others
+                    with what it returned. Nothing in the system may write a coordinate that no tool
+                    produced.
+                </p>
+
+                <figure class="flow my-4">
+                    <div class="row g-2 align-items-stretch">
+                        <div class="col-12 col-lg">
+                            <div class="flow-stage h-100">
+                                <h3 class="flow-stage-title">Question</h3>
+                                <div class="flow-node">
+                                    <span class="flow-node-name">User question</span>
+                                    <span class="flow-node-note">naming a place or giving coordinates</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-12 col-lg-auto flow-arrow" aria-hidden="true">
+                            <span class="d-lg-none">&darr;</span>
+                            <span class="d-none d-lg-inline">&rarr;</span>
+                        </div>
+
+                        <div class="col-12 col-lg-4">
+                            <div class="flow-stage h-100">
+                                <h3 class="flow-stage-title">Microsoft Foundry</h3>
+                                <div class="flow-node">
+                                    <span class="flow-node-name">geo-orchestrator</span>
+                                    <span class="flow-node-note">
+                                        gpt-4.1, Agent Framework, hosted here or on App Service
+                                    </span>
+                                </div>
+                                <div class="flow-group">
+                                    <span class="flow-group-title">Resolver: called first, alone</span>
+                                    <div class="flow-node">
+                                        <span class="flow-node-name">place-resolver</span>
+                                    </div>
+                                </div>
+                                <div class="flow-group">
+                                    <span class="flow-group-title">
+                                        Specialists: prompt agents, gpt-4-1-mini, strict JSON
+                                    </span>
+                                    <div class="flow-node"><span class="flow-node-name">weather-specialist</span></div>
+                                    <div class="flow-node"><span class="flow-node-name">terrain-specialist</span></div>
+                                    <div class="flow-node"><span class="flow-node-name">mobility-specialist</span></div>
+                                    <div class="flow-node"><span class="flow-node-name">location-specialist</span></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-12 col-lg-auto flow-arrow" aria-hidden="true">
+                            <span class="d-lg-none">&darr;</span>
+                            <span class="d-none d-lg-inline">&rarr;</span>
+                        </div>
+
+                        <div class="col-12 col-lg">
+                            <div class="flow-stage h-100">
+                                <h3 class="flow-stage-title">Data plane</h3>
+                                <div class="flow-node">
+                                    <span class="flow-node-name">API Management</span>
+                                    <span class="flow-node-note">
+                                        validate-jwt on audience and oid, injects x-functions-key
+                                    </span>
+                                </div>
+                                <div class="flow-node">
+                                    <span class="flow-node-name">Function app</span>
+                                    <span class="flow-node-note">
+                                        Flex Consumption or Dedicated, 9 HTTP endpoints
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-12 col-lg-auto flow-arrow" aria-hidden="true">
+                            <span class="d-lg-none">&darr;</span>
+                            <span class="d-none d-lg-inline">&rarr;</span>
+                        </div>
+
+                        <div class="col-12 col-lg">
+                            <div class="flow-stage h-100">
+                                <h3 class="flow-stage-title">Upstream providers</h3>
+                                <div class="flow-node"><span class="flow-node-name">Azure Maps</span></div>
+                                <div class="flow-node"><span class="flow-node-name">US National Weather Service</span></div>
+                                <div class="flow-node"><span class="flow-node-name">USGS elevation</span></div>
+                            </div>
+                        </div>
+                    </div>
+                    <figcaption class="flow-caption">
+                        Each specialist reaches the data plane as an OpenAPI tool, with a managed
+                        identity token; the merged answer returns to the user from the orchestrator.
+                    </figcaption>
+                </figure>
+
+                <p>
+                    The specialists never hold a key. The Foundry account's system-assigned managed
+                    identity requests a token for the gateway's audience, API Management validates it
+                    and pins the caller's object id, and only then adds the function host key. The
+                    key exists on one hop that the agents cannot see.
+                </p>
+
+                <h3 class="fw-light h5 mt-5 mb-3">Where the orchestrator runs</h3>
+                <p>
+                    The orchestrator is an ordinary ASP.NET Core app either way. AgentHost serves the
+                    OpenAI Responses protocol at <code>/responses</code> whatever it is running on, so
+                    the binary is identical and only the address callers use changes.
+                </p>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead>
+                            <tr>
+                                <th scope="col"></th>
+                                <th scope="col"><code>FoundryHosted</code></th>
+                                <th scope="col"><code>LinuxAppService</code></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <th scope="row" class="fw-normal text-body-secondary">Runs on</th>
+                                <td>Foundry Agent Service</td>
+                                <td>Linux App Service behind API Management</td>
+                            </tr>
+                            <tr>
+                                <th scope="row" class="fw-normal text-body-secondary">Runs as</th>
+                                <td>the agent's own identity</td>
+                                <td>a user-assigned identity granted Azure AI User on the account</td>
+                            </tr>
+                            <tr>
+                                <th scope="row" class="fw-normal text-body-secondary">Callers reach</th>
+                                <td>the Foundry agent endpoint</td>
+                                <td><code>https://&lt;gateway&gt;/orchestrator/responses</code></td>
+                            </tr>
+                            <tr>
+                                <th scope="row" class="fw-normal text-body-secondary">Published by</th>
+                                <td><code>azd deploy geo-orchestrator</code></td>
+                                <td><code>dotnet publish</code> and zip deploy</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p>
+                    <code>main.bicep</code> chooses from <code>environment().name</code> rather than
+                    from an argument, because the Agent Service is commercial-only today and the right
+                    answer is a property of the cloud. <code>-OrchestratorHost</code> overrides it in
+                    either direction, which is the only way to exercise the App Service path from
+                    commercial.
+                </p>
+                <p>
+                    Self-hosted, the App Service is not open to the internet. It requires an Entra
+                    token whose <code>oid</code> is the gateway's managed identity, and the gateway
+                    obtains that itself with <code>authentication-managed-identity</code> after
+                    validating the caller's own token against a separate audience. The two audiences
+                    are what stop a token minted for one hop being replayed against the other, and a
+                    request that skipped the gateway cannot satisfy the second check at all.
+                </p>
+                <p>
+                    Authorizing by caller identity rather than by source address is deliberate. An
+                    address allowlist reads as equivalent but fails open: the gateway's public IP is
+                    not exposed on every API Management tier, and an unresolved address leaves the app
+                    reachable by anyone.
+                </p>
+
+                <h3 class="fw-light h5 mt-5 mb-3">Asking from a browser</h3>
+                <p>
+                    <code>POST /responses</code> with a bearer token is the whole interface, and the
+                    token is the awkward part of it: reaching the orchestrator by hand means signing
+                    in with the Azure CLI, asking it for a token for the right audience, and pasting
+                    that into a request. This web front end is that sequence made ordinary &mdash; an
+                    ASP.NET Core Blazor Server app, styled with Bootstrap, on its own Linux App
+                    Service.
+                </p>
+                <p>
+                    It signs the user in with Entra and calls the orchestrator with <em>that user's</em>
+                    token rather than one of its own, so API Management still authorizes the person who
+                    asked. Losing that distinction is the usual cost of putting a web tier in front of
+                    an API, and there is no reason to pay it here: the gateway's orchestrator policy
+                    authorizes by audience rather than by a pinned object id, so a delegated token from
+                    a signed-in user satisfies it exactly as a managed identity's does.
+                </p>
+                <p>
+                    The app registration the app signs users in with is a confidential client, and it
+                    proves itself with a federated credential naming the App Service's managed
+                    identity, so no client secret exists for it in the template, in the repository, or
+                    in app settings. Redirect URIs and that credential both name resources the
+                    provision creates, so they are registered afterwards by
+                    <code>webapp/Set-WebAppRegistration.ps1</code>.
+                </p>
+                <p>
+                    Under a Foundry-hosted orchestrator there is no gateway to call and no orchestrator
+                    app registration to hold a scope. The app is pointed at the Foundry agent endpoint
+                    with a token for the Foundry data plane instead, which the user's Azure AI User
+                    role authorizes; the endpoint and the scope are two app settings and nothing else
+                    about the app changes. <code>-SkipWebApp</code> leaves both the App Service and its
+                    app registration out of the deployment.
+                </p>
+
+                <p class="mt-5">
+                    <a class="btn btn-outline-secondary btn-sm" href="">Back to the question box</a>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
